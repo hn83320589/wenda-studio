@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>跑了三年的排程突然失敗：先別翻程式碼，先問「那天改了什麼」｜問達工作室</title>
+<meta name="description" content="程式沒人動過，排程卻開始失敗。這篇用一個示範情境，說明怎麼找出第一次失敗的時間點，再從環境變動找到真正的原因。">
+<meta property="og:title" content="跑了三年的排程突然失敗：先別翻程式碼，先問「那天改了什麼」｜問達工作室">
+<meta property="og:description" content="程式沒人動過，排程卻開始失敗。這篇用一個示範情境，說明怎麼找出第一次失敗的時間點，再從環境變動找到真正的原因。">
+<meta property="og:type" content="article">
+<meta property="og:image" content="https://hn83320589.github.io/wenda-studio/blog/scheduled-job-failed/fig-1.png">
+<link rel="alternate" type="application/rss+xml" title="問達工作室文章" href="../../blog/feed.xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<style>
+:root{--mist:#EEF3F2;--pane:#DCEAE7;--edge:#2F7F78;--ink:#1B2B3A;--mute:#5A6B75;--amber:#C9861F;--white:#FBFDFC;
+--hand:"LXGW WenKai TC","Kaiti TC","BiauKai",serif;--sans:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+--mono:"JetBrains Mono","SFMono-Regular",Consolas,monospace}
+*{box-sizing:border-box}
+body{margin:0;background:var(--mist);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.85;-webkit-font-smoothing:antialiased}
+a{color:var(--edge);text-underline-offset:3px}
+:focus-visible{outline:3px solid var(--amber);outline-offset:3px}
+.wrap{width:min(760px,100% - 40px);margin-inline:auto}
+.top{display:flex;justify-content:space-between;align-items:center;padding:22px 0;width:min(1080px,100% - 40px);margin-inline:auto}
+.brand{font-family:var(--hand);font-weight:700;font-size:1.2rem;color:var(--ink);text-decoration:none}
+.top nav a{margin-left:20px;color:var(--ink);text-decoration:none;font-size:.95rem}
+.top nav a:hover{color:var(--edge)}
+h1{font-family:var(--hand);font-size:clamp(1.9rem,4vw,2.6rem);line-height:1.3;margin:24px 0 10px}
+h2{font-family:var(--hand);font-size:1.55rem;line-height:1.4;margin:48px 0 12px}
+h3{font-size:1.12rem;margin:32px 0 8px}
+.meta{color:var(--mute);font-size:.92rem;margin-bottom:36px}
+.meta span+span::before{content:"／";margin:0 6px;color:rgba(47,127,120,.5)}
+article p,article li{max-width:40em}
+article img{max-width:100%;height:auto}
+figure{margin:32px 0;text-align:center}
+figure img{background:var(--white);border:1px solid rgba(47,127,120,.3);border-radius:8px;padding:12px}
+figcaption{color:var(--mute);font-size:.9rem;margin-top:8px}
+code{font-family:var(--mono);font-size:.88em;background:rgba(220,234,231,.8);padding:1px 5px;border-radius:4px}
+pre{background:#1B2B3A;color:#E6EEF0;padding:18px 20px;border-radius:8px;overflow-x:auto;line-height:1.6;font-size:.88rem}
+pre code{background:none;padding:0;color:inherit;font-size:inherit}
+blockquote{margin:24px 0;padding:4px 20px;border-left:3px solid var(--amber);background:rgba(201,134,31,.08);color:var(--ink)}
+table{border-collapse:collapse;width:100%;margin:24px 0;font-size:.95rem;background:var(--white)}
+th,td{border:1px solid rgba(47,127,120,.3);padding:8px 12px;text-align:left;vertical-align:top}
+th{background:var(--pane)}
+.note{color:var(--mute);font-size:.9rem}
+.post-end{margin:56px 0 24px;padding-top:24px;border-top:1px dashed rgba(47,127,120,.45)}
+.list{list-style:none;padding:0;margin:0}
+.list li{padding:22px 0;border-bottom:1px solid rgba(47,127,120,.22)}
+.list a.t{font-size:1.15rem;font-weight:700;color:var(--ink);text-decoration:none}
+.list a.t:hover{color:var(--edge)}
+.list .d{color:var(--mute);font-size:.88rem;display:block;margin-bottom:4px}
+.list p{margin:6px 0 0;color:var(--mute)}
+footer{padding:40px 0 56px;color:var(--mute);font-size:.88rem}
+@media (max-width:600px){body{font-size:16px}.top nav a{margin-left:14px}}
+pre { line-height: 125%; }
+td.linenos .normal { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }
+span.linenos { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }
+td.linenos .special { color: #000000; background-color: #ffffc0; padding-left: 5px; padding-right: 5px; }
+span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 5px; padding-right: 5px; }
+.hl .hll { background-color: #49483e }
+.hl { background: #272822; color: #F8F8F2 }
+.hl .c { color: #959077 } /* Comment */
+.hl .err { color: #ED007E; background-color: #1E0010 } /* Error */
+.hl .esc { color: #F8F8F2 } /* Escape */
+.hl .g { color: #F8F8F2 } /* Generic */
+.hl .k { color: #66D9EF } /* Keyword */
+.hl .l { color: #AE81FF } /* Literal */
+.hl .n { color: #F8F8F2 } /* Name */
+.hl .o { color: #FF4689 } /* Operator */
+.hl .x { color: #F8F8F2 } /* Other */
+.hl .p { color: #F8F8F2 } /* Punctuation */
+.hl .ch { color: #959077 } /* Comment.Hashbang */
+.hl .cm { color: #959077 } /* Comment.Multiline */
+.hl .cp { color: #959077 } /* Comment.Preproc */
+.hl .cpf { color: #959077 } /* Comment.PreprocFile */
+.hl .c1 { color: #959077 } /* Comment.Single */
+.hl .cs { color: #959077 } /* Comment.Special */
+.hl .gd { color: #FF4689 } /* Generic.Deleted */
+.hl .ge { color: #F8F8F2; font-style: italic } /* Generic.Emph */
+.hl .ges { color: #F8F8F2; font-weight: bold; font-style: italic } /* Generic.EmphStrong */
+.hl .gr { color: #FF4689 } /* Generic.Error */
+.hl .gh { color: #F8F8F2 } /* Generic.Heading */
+.hl .gi { color: #A6E22E } /* Generic.Inserted */
+.hl .go { color: #66D9EF } /* Generic.Output */
+.hl .gp { color: #FF4689; font-weight: bold } /* Generic.Prompt */
+.hl .gs { color: #F8F8F2; font-weight: bold } /* Generic.Strong */
+.hl .gu { color: #959077 } /* Generic.Subheading */
+.hl .gt { color: #66D9EF } /* Generic.Traceback */
+.hl .kc { color: #66D9EF } /* Keyword.Constant */
+.hl .kd { color: #66D9EF } /* Keyword.Declaration */
+.hl .kn { color: #FF4689 } /* Keyword.Namespace */
+.hl .kp { color: #66D9EF } /* Keyword.Pseudo */
+.hl .kr { color: #66D9EF } /* Keyword.Reserved */
+.hl .kt { color: #66D9EF } /* Keyword.Type */
+.hl .ld { color: #E6DB74 } /* Literal.Date */
+.hl .m { color: #AE81FF } /* Literal.Number */
+.hl .s { color: #E6DB74 } /* Literal.String */
+.hl .na { color: #A6E22E } /* Name.Attribute */
+.hl .nb { color: #A6E22E } /* Name.Builtin */
+.hl .nc { color: #A6E22E } /* Name.Class */
+.hl .no { color: #66D9EF } /* Name.Constant */
+.hl .nd { color: #A6E22E } /* Name.Decorator */
+.hl .ni { color: #F8F8F2 } /* Name.Entity */
+.hl .ne { color: #A6E22E } /* Name.Exception */
+.hl .nf { color: #A6E22E } /* Name.Function */
+.hl .nl { color: #F8F8F2 } /* Name.Label */
+.hl .nn { color: #F8F8F2 } /* Name.Namespace */
+.hl .nx { color: #A6E22E } /* Name.Other */
+.hl .py { color: #F8F8F2 } /* Name.Property */
+.hl .nt { color: #FF4689 } /* Name.Tag */
+.hl .nv { color: #F8F8F2 } /* Name.Variable */
+.hl .ow { color: #FF4689 } /* Operator.Word */
+.hl .pm { color: #F8F8F2 } /* Punctuation.Marker */
+.hl .w { color: #F8F8F2 } /* Text.Whitespace */
+.hl .mb { color: #AE81FF } /* Literal.Number.Bin */
+.hl .mf { color: #AE81FF } /* Literal.Number.Float */
+.hl .mh { color: #AE81FF } /* Literal.Number.Hex */
+.hl .mi { color: #AE81FF } /* Literal.Number.Integer */
+.hl .mo { color: #AE81FF } /* Literal.Number.Oct */
+.hl .sa { color: #E6DB74 } /* Literal.String.Affix */
+.hl .sb { color: #E6DB74 } /* Literal.String.Backtick */
+.hl .sc { color: #E6DB74 } /* Literal.String.Char */
+.hl .dl { color: #E6DB74 } /* Literal.String.Delimiter */
+.hl .sd { color: #E6DB74 } /* Literal.String.Doc */
+.hl .s2 { color: #E6DB74 } /* Literal.String.Double */
+.hl .se { color: #AE81FF } /* Literal.String.Escape */
+.hl .sh { color: #E6DB74 } /* Literal.String.Heredoc */
+.hl .si { color: #E6DB74 } /* Literal.String.Interpol */
+.hl .sx { color: #E6DB74 } /* Literal.String.Other */
+.hl .sr { color: #E6DB74 } /* Literal.String.Regex */
+.hl .s1 { color: #E6DB74 } /* Literal.String.Single */
+.hl .ss { color: #E6DB74 } /* Literal.String.Symbol */
+.hl .bp { color: #A6E22E } /* Name.Builtin.Pseudo */
+.hl .fm { color: #A6E22E } /* Name.Function.Magic */
+.hl .vc { color: #F8F8F2 } /* Name.Variable.Class */
+.hl .vg { color: #F8F8F2 } /* Name.Variable.Global */
+.hl .vi { color: #F8F8F2 } /* Name.Variable.Instance */
+.hl .vm { color: #F8F8F2 } /* Name.Variable.Magic */
+.hl .il { color: #AE81FF } /* Literal.Number.Integer.Long */.hl pre{background:#1B2B3A}</style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="../../">問達工作室</a>
+  <nav aria-label="頁面導覽"><a href="../../">首頁</a><a href="../../blog/">文章</a><a href="../../#contact">預約診斷</a></nav>
+</header>
+<main class="wrap">
+<article>
+<h1>跑了三年的排程突然失敗：先別翻程式碼，先問「那天改了什麼」</h1>
+<div class="meta"><span>2026-11-17</span><span>排程與批次</span></div>
+<p>週一早上，負責對帳的同事發現：上週五之後的訂單資料都沒有進來。</p>
+<p>每天凌晨兩點跑的同步排程，三年來沒出過事。程式碼最近沒人改過，主機也沒重開。大家的第一反應通常是「程式壞了」，然後開始翻原始碼。</p>
+<p>這篇用一個示範情境（以下的系統名稱、帳號、時間都是虛構的）說明另一種順序：<strong>先找出第一次失敗的時間，再問那個時間點前後，環境發生了什麼變化。</strong></p>
+<h2>程式沒改，不代表環境沒變</h2>
+<p>排程程式本身通常很穩定，會讓它「突然」壞掉的，多半是程式碼以外的東西：</p>
+<ul>
+<li>資料庫帳號的密碼到期（有些單位會設定 90 天之類的密碼到期政策）</li>
+<li>SSL／TLS 憑證到期</li>
+<li>磁碟空間用完，log 或暫存檔寫不進去</li>
+<li>上游 API 改版，欄位名稱或回傳格式變了</li>
+<li>作業系統或執行環境更新，某個套件版本跟著變了</li>
+<li>資料量長大，查詢時間超過原本設定的逾時</li>
+</ul>
+<p>這些變動有個共同點：<strong>發生的時間點很明確，但不會出現在程式碼的修改紀錄裡。</strong> 所以排查的重點會從「哪一行錯了」變成「哪一天變了」。</p>
+<figure><img src="fig-1.svg" alt="排程突然失敗時的排查順序" loading="lazy"><figcaption>排程突然失敗時的排查順序</figcaption></figure>
+<h2>第一步：找出「第一次失敗」，不是「發現的時間」</h2>
+<p>同事是週一發現的，但排程可能早就壞了好幾天。把時間點搞錯，後面比對變動就會找錯方向。</p>
+<p>先看一眼失敗那天的 log：</p>
+<figure><img src="fig-2.png" alt="示範情境的排程 log：重試兩次後，第三次出現登入失敗" loading="lazy"><figcaption>示範情境的排程 log：重試兩次後，第三次出現登入失敗</figcaption></figure>
+<p>一天的 log 只能看到當天。要知道從哪一天開始壞、每天的狀況如何，比較快的做法是寫一支小程式把整個資料夾掃過一遍：</p>
+<div class="hl"><pre><span></span><code><span class="sd">"""找出排程「第一次失敗」的時間，並列出每天成功／失敗的次數。</span>
+
+<span class="sd">用法：python3 first_failure.py logs/</span>
+<span class="sd">假設每行格式：2026-11-07 02:00:17 [ERROR] 訊息</span>
+<span class="sd">"""</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">Counter</span><span class="p">,</span> <span class="n">defaultdict</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+
+<span class="n">LINE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">"^(\d</span><span class="si">{4}</span><span class="s2">-\d</span><span class="si">{2}</span><span class="s2">-\d</span><span class="si">{2}</span><span class="s2">) (\d</span><span class="si">{2}</span><span class="s2">:\d</span><span class="si">{2}</span><span class="s2">:\d</span><span class="si">{2}</span><span class="s2">) \[(\w+)\] (.*)$"</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">scan</span><span class="p">(</span><span class="n">log_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">):</span>
+    <span class="n">first_error</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">daily</span> <span class="o">=</span> <span class="n">defaultdict</span><span class="p">(</span><span class="n">Counter</span><span class="p">)</span>       <span class="c1"># 日期 -&gt; {"成功": n, "失敗": n}</span>
+    <span class="n">signatures</span> <span class="o">=</span> <span class="n">Counter</span><span class="p">()</span>             <span class="c1"># 錯誤訊息 -&gt; 次數</span>
+
+    <span class="k">for</span> <span class="n">path</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">log_dir</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="s2">"*.log"</span><span class="p">)):</span>
+        <span class="k">for</span> <span class="n">raw</span> <span class="ow">in</span> <span class="n">path</span><span class="o">.</span><span class="n">read_text</span><span class="p">(</span><span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span><span class="o">.</span><span class="n">splitlines</span><span class="p">():</span>
+            <span class="n">m</span> <span class="o">=</span> <span class="n">LINE</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="n">raw</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">day</span><span class="p">,</span> <span class="n">time</span><span class="p">,</span> <span class="n">level</span><span class="p">,</span> <span class="n">msg</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">groups</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">level</span> <span class="o">==</span> <span class="s2">"ERROR"</span><span class="p">:</span>
+                <span class="n">daily</span><span class="p">[</span><span class="n">day</span><span class="p">][</span><span class="s2">"失敗"</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="c1"># 把數字換成 #，同一類錯誤才能合併計算</span>
+                <span class="n">signatures</span><span class="p">[</span><span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">"\d+"</span><span class="p">,</span> <span class="s2">"#"</span><span class="p">,</span> <span class="n">msg</span><span class="p">)]</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="k">if</span> <span class="n">first_error</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="p">(</span><span class="n">day</span><span class="p">,</span> <span class="n">time</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">first_error</span><span class="p">[:</span><span class="mi">2</span><span class="p">]:</span>
+                    <span class="n">first_error</span> <span class="o">=</span> <span class="p">(</span><span class="n">day</span><span class="p">,</span> <span class="n">time</span><span class="p">,</span> <span class="n">msg</span><span class="p">,</span> <span class="n">path</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="s2">"排程結束"</span> <span class="ow">in</span> <span class="n">msg</span> <span class="ow">and</span> <span class="s2">"同步 0 筆"</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">msg</span><span class="p">:</span>
+                <span class="n">daily</span><span class="p">[</span><span class="n">day</span><span class="p">][</span><span class="s2">"成功"</span><span class="p">]</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="k">return</span> <span class="n">first_error</span><span class="p">,</span> <span class="n">daily</span><span class="p">,</span> <span class="n">signatures</span>
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>
+    <span class="n">first</span><span class="p">,</span> <span class="n">daily</span><span class="p">,</span> <span class="n">sigs</span> <span class="o">=</span> <span class="n">scan</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">1</span><span class="p">]))</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"每日結果："</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">day</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">daily</span><span class="p">):</span>
+        <span class="n">c</span> <span class="o">=</span> <span class="n">daily</span><span class="p">[</span><span class="n">day</span><span class="p">]</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  </span><span class="si">{</span><span class="n">day</span><span class="si">}</span><span class="s2">  成功 </span><span class="si">{</span><span class="n">c</span><span class="p">[</span><span class="s1">'成功'</span><span class="p">]</span><span class="si">}</span><span class="s2">  失敗 </span><span class="si">{</span><span class="n">c</span><span class="p">[</span><span class="s1">'失敗'</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">first</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="se">\n</span><span class="s2">第一次失敗：</span><span class="si">{</span><span class="n">first</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">first</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">（</span><span class="si">{</span><span class="n">first</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span><span class="si">}</span><span class="s2">）"</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  訊息：</span><span class="si">{</span><span class="n">first</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"</span><span class="se">\n</span><span class="s2">錯誤類型："</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">sig</span><span class="p">,</span> <span class="n">n</span> <span class="ow">in</span> <span class="n">sigs</span><span class="o">.</span><span class="n">most_common</span><span class="p">():</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"  </span><span class="si">{</span><span class="n">n</span><span class="si">:</span><span class="s2">&gt;3</span><span class="si">}</span><span class="s2"> 次  </span><span class="si">{</span><span class="n">sig</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+</code></pre></div>
+
+<p>拿示範用的 9 天 log 實際執行，結果是：</p>
+<div class="hl"><pre><span></span><code>每日結果：
+  2026-11-01  成功 1  失敗 0
+  2026-11-02  成功 1  失敗 0
+  ...（11/03 到 11/05 相同）
+  2026-11-06  成功 1  失敗 0
+  2026-11-07  成功 0  失敗 1
+  2026-11-08  成功 0  失敗 1
+  2026-11-09  成功 0  失敗 1
+
+第一次失敗：2026-11-07 02:00:17（nightly-sync-2026-11-07.log）
+  訊息：登入失敗：帳號 sync_user 密碼已過期 (錯誤碼 18487)
+
+錯誤類型：
+    3 次  登入失敗：帳號 sync_user 密碼已過期 (錯誤碼 #)
+</code></pre></div>
+
+<p>兩件事馬上清楚了：11/06 還正常，11/07 開始壞；而且三天的錯誤都是同一種。只有一種錯誤，通常代表只有一個原因。</p>
+<h2>第二步：把變動排成一條時間線</h2>
+<p>接著把「第一次失敗」放到時間線上，再把那段時間所有已知的變動標上去：</p>
+<figure><img src="fig-3.png" alt="示範情境的時間線：密碼到期的時間點，正好落在最後一次成功和第一次失敗之間" loading="lazy"><figcaption>示範情境的時間線：密碼到期的時間點，正好落在最後一次成功和第一次失敗之間</figcaption></figure>
+<p>時間線上只要有一個變動剛好卡在「最後一次成功」和「第一次失敗」之間，它就是頭號嫌疑犯。這個情境裡，密碼在 11/06 深夜到期，下一次排程就失敗了，錯誤訊息也直接寫著「密碼已過期」，證據是一致的。</p>
+<p>變動清單要去哪裡找？常見的來源有：</p>
+<table>
+<thead>
+<tr>
+<th>變動類型</th>
+<th>去哪裡查</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>帳號密碼、權限</td>
+<td>資料庫的帳號設定、AD 或帳號管理系統的密碼政策</td>
+</tr>
+<tr>
+<td>憑證</td>
+<td>憑證本身的到期日、負責續約的人或排程</td>
+</tr>
+<tr>
+<td>磁碟空間</td>
+<td>主機監控、磁碟使用量的歷史紀錄</td>
+</tr>
+<tr>
+<td>上游 API</td>
+<td>對方的版本公告、改版通知信</td>
+</tr>
+<tr>
+<td>系統更新</td>
+<td>作業系統與套件的更新紀錄</td>
+</tr>
+</tbody>
+</table>
+<h2>第三步：修正之後，補資料、加預警</h2>
+<p>找到原因後，修正本身通常很快：重設密碼、更新排程使用的連線設定。但還有兩件事常被漏掉：</p>
+<ol>
+<li><strong>補跑遺漏的資料。</strong> 11/07 到修好之前的資料都沒同步，要確認排程能不能指定日期補跑，或要手動處理。</li>
+<li><strong>讓下次提前知道。</strong> 這次是密碼到期，下次可能是憑證到期。與其等使用者發現，不如讓系統先告訴你。</li>
+</ol>
+<p>如果資料庫是 SQL Server，可以用下面這段查出 SQL 登入帳號還剩幾天到期，放進每天的檢查排程裡：</p>
+<div class="hl"><pre><span></span><code><span class="c1">-- 列出啟用密碼到期政策的 SQL 登入帳號，以及剩餘天數</span>
+<span class="k">SELECT</span><span class="w"> </span><span class="n">name</span><span class="p">,</span>
+<span class="w">       </span><span class="n">LOGINPROPERTY</span><span class="p">(</span><span class="n">name</span><span class="p">,</span><span class="w"> </span><span class="s1">'DaysUntilExpiration'</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">days_left</span>
+<span class="k">FROM</span><span class="w"> </span><span class="n">sys</span><span class="p">.</span><span class="n">sql_logins</span>
+<span class="k">WHERE</span><span class="w"> </span><span class="n">is_expiration_checked</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span>
+<span class="k">ORDER</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">days_left</span><span class="p">;</span>
+</code></pre></div>
+
+<blockquote>
+<p>這段 SQL 沒有在本文的環境實際執行過，使用前請先在測試環境確認結果。上面的 Python 程式則有用示範 log 實際跑過，輸出就是前面那一段。</p>
+</blockquote>
+<h2>學到什麼</h2>
+<ul>
+<li>程式沒改，不代表環境沒變。排程突然失敗時，先懷疑密碼、憑證、磁碟、上游這些「會到期、會長大、會被別人改」的東西。</li>
+<li>先找第一次失敗的確切時間，而不是有人發現的時間。時間點對了，比對變動才有意義。</li>
+<li>修好只是一半。補資料、加預警，才不會在同一個地方再摔一次。</li>
+</ul>
+<p>如果你的排程也突然不跑了、原本寫的人又聯絡不上，問達工作室可以先幫你做一次診斷，找出是哪個環節變了。</p>
+<div class="post-end note">問達工作室｜系統救火與自動化・<a href="../../">服務說明</a>・<a href="../../blog/">更多文章</a></div>
+</article>
+</main>
+<footer class="wrap">© 2026 問達工作室・<a href="../../blog/feed.xml">RSS</a></footer>
+</body>
+</html>
