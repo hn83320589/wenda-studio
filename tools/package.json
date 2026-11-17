@@ -1,0 +1,8 @@
+{
+  "name": "wenda-studio-tools",
+  "private": true,
+  "description": "建置部落格時用來把 Mermaid 轉成圖檔",
+  "dependencies": {
+    "mermaid": "^11.0.0"
+  }
+}

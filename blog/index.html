@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>文章｜問達工作室</title>
+<meta name="description" content="系統救火、除錯與自動化的實作紀錄。">
+<meta property="og:title" content="文章｜問達工作室">
+<meta property="og:description" content="系統救火、除錯與自動化的實作紀錄。">
+<meta property="og:type" content="website">
+<link rel="alternate" type="application/rss+xml" title="問達工作室文章" href="../blog/feed.xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<style>
+:root{--mist:#EEF3F2;--pane:#DCEAE7;--edge:#2F7F78;--ink:#1B2B3A;--mute:#5A6B75;--amber:#C9861F;--white:#FBFDFC;
+--hand:"LXGW WenKai TC","Kaiti TC","BiauKai",serif;--sans:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+--mono:"JetBrains Mono","SFMono-Regular",Consolas,monospace}
+*{box-sizing:border-box}
+body{margin:0;background:var(--mist);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.85;-webkit-font-smoothing:antialiased}
+a{color:var(--edge);text-underline-offset:3px}
+:focus-visible{outline:3px solid var(--amber);outline-offset:3px}
+.wrap{width:min(760px,100% - 40px);margin-inline:auto}
+.top{display:flex;justify-content:space-between;align-items:center;padding:22px 0;width:min(1080px,100% - 40px);margin-inline:auto}
+.brand{font-family:var(--hand);font-weight:700;font-size:1.2rem;color:var(--ink);text-decoration:none}
+.top nav a{margin-left:20px;color:var(--ink);text-decoration:none;font-size:.95rem}
+.top nav a:hover{color:var(--edge)}
+h1{font-family:var(--hand);font-size:clamp(1.9rem,4vw,2.6rem);line-height:1.3;margin:24px 0 10px}
+h2{font-family:var(--hand);font-size:1.55rem;line-height:1.4;margin:48px 0 12px}
+h3{font-size:1.12rem;margin:32px 0 8px}
+.meta{color:var(--mute);font-size:.92rem;margin-bottom:36px}
+.meta span+span::before{content:"／";margin:0 6px;color:rgba(47,127,120,.5)}
+article p,article li{max-width:40em}
+article img{max-width:100%;height:auto}
+figure{margin:32px 0;text-align:center}
+figure img{background:var(--white);border:1px solid rgba(47,127,120,.3);border-radius:8px;padding:12px}
+figcaption{color:var(--mute);font-size:.9rem;margin-top:8px}
+code{font-family:var(--mono);font-size:.88em;background:rgba(220,234,231,.8);padding:1px 5px;border-radius:4px}
+pre{background:#1B2B3A;color:#E6EEF0;padding:18px 20px;border-radius:8px;overflow-x:auto;line-height:1.6;font-size:.88rem}
+pre code{background:none;padding:0;color:inherit;font-size:inherit}
+blockquote{margin:24px 0;padding:4px 20px;border-left:3px solid var(--amber);background:rgba(201,134,31,.08);color:var(--ink)}
+table{border-collapse:collapse;width:100%;margin:24px 0;font-size:.95rem;background:var(--white)}
+th,td{border:1px solid rgba(47,127,120,.3);padding:8px 12px;text-align:left;vertical-align:top}
+th{background:var(--pane)}
+.note{color:var(--mute);font-size:.9rem}
+.post-end{margin:56px 0 24px;padding-top:24px;border-top:1px dashed rgba(47,127,120,.45)}
+.list{list-style:none;padding:0;margin:0}
+.list li{padding:22px 0;border-bottom:1px solid rgba(47,127,120,.22)}
+.list a.t{font-size:1.15rem;font-weight:700;color:var(--ink);text-decoration:none}
+.list a.t:hover{color:var(--edge)}
+.list .d{color:var(--mute);font-size:.88rem;display:block;margin-bottom:4px}
+.list p{margin:6px 0 0;color:var(--mute)}
+footer{padding:40px 0 56px;color:var(--mute);font-size:.88rem}
+@media (max-width:600px){body{font-size:16px}.top nav a{margin-left:14px}}
+pre { line-height: 125%; }
+td.linenos .normal { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }
+span.linenos { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }
+td.linenos .special { color: #000000; background-color: #ffffc0; padding-left: 5px; padding-right: 5px; }
+span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 5px; padding-right: 5px; }
+.hl .hll { background-color: #49483e }
+.hl { background: #272822; color: #F8F8F2 }
+.hl .c { color: #959077 } /* Comment */
+.hl .err { color: #ED007E; background-color: #1E0010 } /* Error */
+.hl .esc { color: #F8F8F2 } /* Escape */
+.hl .g { color: #F8F8F2 } /* Generic */
+.hl .k { color: #66D9EF } /* Keyword */
+.hl .l { color: #AE81FF } /* Literal */
+.hl .n { color: #F8F8F2 } /* Name */
+.hl .o { color: #FF4689 } /* Operator */
+.hl .x { color: #F8F8F2 } /* Other */
+.hl .p { color: #F8F8F2 } /* Punctuation */
+.hl .ch { color: #959077 } /* Comment.Hashbang */
+.hl .cm { color: #959077 } /* Comment.Multiline */
+.hl .cp { color: #959077 } /* Comment.Preproc */
+.hl .cpf { color: #959077 } /* Comment.PreprocFile */
+.hl .c1 { color: #959077 } /* Comment.Single */
+.hl .cs { color: #959077 } /* Comment.Special */
+.hl .gd { color: #FF4689 } /* Generic.Deleted */
+.hl .ge { color: #F8F8F2; font-style: italic } /* Generic.Emph */
+.hl .ges { color: #F8F8F2; font-weight: bold; font-style: italic } /* Generic.EmphStrong */
+.hl .gr { color: #FF4689 } /* Generic.Error */
+.hl .gh { color: #F8F8F2 } /* Generic.Heading */
+.hl .gi { color: #A6E22E } /* Generic.Inserted */
+.hl .go { color: #66D9EF } /* Generic.Output */
+.hl .gp { color: #FF4689; font-weight: bold } /* Generic.Prompt */
+.hl .gs { color: #F8F8F2; font-weight: bold } /* Generic.Strong */
+.hl .gu { color: #959077 } /* Generic.Subheading */
+.hl .gt { color: #66D9EF } /* Generic.Traceback */
+.hl .kc { color: #66D9EF } /* Keyword.Constant */
+.hl .kd { color: #66D9EF } /* Keyword.Declaration */
+.hl .kn { color: #FF4689 } /* Keyword.Namespace */
+.hl .kp { color: #66D9EF } /* Keyword.Pseudo */
+.hl .kr { color: #66D9EF } /* Keyword.Reserved */
+.hl .kt { color: #66D9EF } /* Keyword.Type */
+.hl .ld { color: #E6DB74 } /* Literal.Date */
+.hl .m { color: #AE81FF } /* Literal.Number */
+.hl .s { color: #E6DB74 } /* Literal.String */
+.hl .na { color: #A6E22E } /* Name.Attribute */
+.hl .nb { color: #A6E22E } /* Name.Builtin */
+.hl .nc { color: #A6E22E } /* Name.Class */
+.hl .no { color: #66D9EF } /* Name.Constant */
+.hl .nd { color: #A6E22E } /* Name.Decorator */
+.hl .ni { color: #F8F8F2 } /* Name.Entity */
+.hl .ne { color: #A6E22E } /* Name.Exception */
+.hl .nf { color: #A6E22E } /* Name.Function */
+.hl .nl { color: #F8F8F2 } /* Name.Label */
+.hl .nn { color: #F8F8F2 } /* Name.Namespace */
+.hl .nx { color: #A6E22E } /* Name.Other */
+.hl .py { color: #F8F8F2 } /* Name.Property */
+.hl .nt { color: #FF4689 } /* Name.Tag */
+.hl .nv { color: #F8F8F2 } /* Name.Variable */
+.hl .ow { color: #FF4689 } /* Operator.Word */
+.hl .pm { color: #F8F8F2 } /* Punctuation.Marker */
+.hl .w { color: #F8F8F2 } /* Text.Whitespace */
+.hl .mb { color: #AE81FF } /* Literal.Number.Bin */
+.hl .mf { color: #AE81FF } /* Literal.Number.Float */
+.hl .mh { color: #AE81FF } /* Literal.Number.Hex */
+.hl .mi { color: #AE81FF } /* Literal.Number.Integer */
+.hl .mo { color: #AE81FF } /* Literal.Number.Oct */
+.hl .sa { color: #E6DB74 } /* Literal.String.Affix */
+.hl .sb { color: #E6DB74 } /* Literal.String.Backtick */
+.hl .sc { color: #E6DB74 } /* Literal.String.Char */
+.hl .dl { color: #E6DB74 } /* Literal.String.Delimiter */
+.hl .sd { color: #E6DB74 } /* Literal.String.Doc */
+.hl .s2 { color: #E6DB74 } /* Literal.String.Double */
+.hl .se { color: #AE81FF } /* Literal.String.Escape */
+.hl .sh { color: #E6DB74 } /* Literal.String.Heredoc */
+.hl .si { color: #E6DB74 } /* Literal.String.Interpol */
+.hl .sx { color: #E6DB74 } /* Literal.String.Other */
+.hl .sr { color: #E6DB74 } /* Literal.String.Regex */
+.hl .s1 { color: #E6DB74 } /* Literal.String.Single */
+.hl .ss { color: #E6DB74 } /* Literal.String.Symbol */
+.hl .bp { color: #A6E22E } /* Name.Builtin.Pseudo */
+.hl .fm { color: #A6E22E } /* Name.Function.Magic */
+.hl .vc { color: #F8F8F2 } /* Name.Variable.Class */
+.hl .vg { color: #F8F8F2 } /* Name.Variable.Global */
+.hl .vi { color: #F8F8F2 } /* Name.Variable.Instance */
+.hl .vm { color: #F8F8F2 } /* Name.Variable.Magic */
+.hl .il { color: #AE81FF } /* Literal.Number.Integer.Long */.hl pre{background:#1B2B3A}</style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="../">問達工作室</a>
+  <nav aria-label="頁面導覽"><a href="../">首頁</a><a href="../blog/">文章</a><a href="../#contact">預約診斷</a></nav>
+</header>
+<main class="wrap">
+<h1>文章</h1>
+<p class='note'>系統救火、除錯與自動化的實作紀錄。</p>
+<ul class='list'>
+<li><p>文章準備中。</p></li>
+</ul>
+</main>
+<footer class="wrap">© 2026 問達工作室・<a href="../blog/feed.xml">RSS</a></footer>
+</body>
+</html>
