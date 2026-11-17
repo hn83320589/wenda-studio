@@ -184,14 +184,20 @@ class Renderer:
     def mermaid(self, code: str, out_svg: Path, out_png: Path):
         if not self._mermaid_js:
             sys.exit("找不到 mermaid.min.js，請先執行：npm install --prefix tools")
-        page = self._browser.new_page(viewport={"width": 1000, "height": 800}, device_scale_factor=2)
+        page = self._browser.new_page(viewport={"width": 1400, "height": 1000}, device_scale_factor=2)
         page.set_content(f"<html><body style='margin:0;background:#FBFDFC'><div id='c' style='display:inline-block;padding:16px'></div></body></html>")
         page.add_script_tag(path=str(self._mermaid_js))
         svg = page.evaluate(
             """async ([code, cfg]) => {
                 mermaid.initialize(cfg);
                 const { svg } = await mermaid.render('m' + Math.random().toString(36).slice(2), code);
-                document.getElementById('c').innerHTML = svg;
+                const c = document.getElementById('c');
+                c.innerHTML = svg;
+                // 讓 PNG 以 SVG 原本的寬度輸出，避免被縮小
+                const el = c.querySelector('svg');
+                const w = el.viewBox.baseVal.width;
+                el.setAttribute('width', w);
+                el.style.maxWidth = 'none';
                 return svg;
             }""",
             [code, MERMAID_CONFIG],
