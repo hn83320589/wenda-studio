@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>按一次結帳卻成立兩張訂單：前端擋連點不夠，要讓資料庫說「不」｜問達工作室</title>
+<meta name="description" content="按鈕已經擋了連點，後端也先查過有沒有重複，訂單還是成立兩次。這篇用一個示範情境，說明「先查再寫」為什麼擋不住同時到的請求，以及怎麼用冪等鍵加 UNIQUE 索引讓同一筆請求只成立一次。">
+<meta property="og:title" content="按一次結帳卻成立兩張訂單：前端擋連點不夠，要讓資料庫說「不」｜問達工作室">
+<meta property="og:description" content="按鈕已經擋了連點，後端也先查過有沒有重複，訂單還是成立兩次。這篇用一個示範情境，說明「先查再寫」為什麼擋不住同時到的請求，以及怎麼用冪等鍵加 UNIQUE 索引讓同一筆請求只成立一次。">
+<meta property="og:type" content="article">
+<meta property="og:image" content="https://hn83320589.github.io/wenda-studio/blog/idempotency-key-double-submit/fig-1.png">
+<link rel="alternate" type="application/rss+xml" title="問達工作室文章" href="../../blog/feed.xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<style>
+:root{--mist:#EEF3F2;--pane:#DCEAE7;--edge:#2F7F78;--ink:#1B2B3A;--mute:#5A6B75;--amber:#C9861F;--white:#FBFDFC;
+--hand:"LXGW WenKai TC","Kaiti TC","BiauKai",serif;--sans:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+--mono:"JetBrains Mono","SFMono-Regular",Consolas,monospace}
+*{box-sizing:border-box}
+body{margin:0;background:var(--mist);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.85;-webkit-font-smoothing:antialiased}
+a{color:var(--edge);text-underline-offset:3px}
+:focus-visible{outline:3px solid var(--amber);outline-offset:3px}
+.wrap{width:min(760px,100% - 40px);margin-inline:auto}
+.top{display:flex;justify-content:space-between;align-items:center;padding:22px 0;width:min(1080px,100% - 40px);margin-inline:auto}
+.brand{font-family:var(--hand);font-weight:700;font-size:1.2rem;color:var(--ink);text-decoration:none}
+.top nav a{margin-left:20px;color:var(--ink);text-decoration:none;font-size:.95rem}
+.top nav a:hover{color:var(--edge)}
+h1{font-family:var(--hand);font-size:clamp(1.9rem,4vw,2.6rem);line-height:1.3;margin:24px 0 10px}
+h2{font-family:var(--hand);font-size:1.55rem;line-height:1.4;margin:48px 0 12px}
+h3{font-size:1.12rem;margin:32px 0 8px}
+.meta{color:var(--mute);font-size:.92rem;margin-bottom:36px}
+.meta span+span::before{content:"／";margin:0 6px;color:rgba(47,127,120,.5)}
+article p,article li{max-width:40em}
+article img{max-width:100%;height:auto}
+figure{margin:32px 0;text-align:center}
+figure img{background:var(--white);border:1px solid rgba(47,127,120,.3);border-radius:8px;padding:12px}
+figcaption{color:var(--mute);font-size:.9rem;margin-top:8px}
+code{font-family:var(--mono);font-size:.88em;background:rgba(220,234,231,.8);padding:1px 5px;border-radius:4px}
+pre{background:#1B2B3A;color:#E6EEF0;padding:18px 20px;border-radius:8px;overflow-x:auto;line-height:1.6;font-size:.88rem}
+pre code{background:none;padding:0;color:inherit;font-size:inherit}
+blockquote{margin:24px 0;padding:4px 20px;border-left:3px solid var(--amber);background:rgba(201,134,31,.08);color:var(--ink)}
+table{border-collapse:collapse;width:100%;margin:24px 0;font-size:.95rem;background:var(--white)}
+th,td{border:1px solid rgba(47,127,120,.3);padding:8px 12px;text-align:left;vertical-align:top}
+th{background:var(--pane)}
+.note{color:var(--mute);font-size:.9rem}
+.post-end{margin:56px 0 24px;padding-top:24px;border-top:1px dashed rgba(47,127,120,.45)}
+.list{list-style:none;padding:0;margin:0}
+.list li{padding:22px 0;border-bottom:1px solid rgba(47,127,120,.22)}
+.list a.t{font-size:1.15rem;font-weight:700;color:var(--ink);text-decoration:none}
+.list a.t:hover{color:var(--edge)}
+.list .d{color:var(--mute);font-size:.88rem;display:block;margin-bottom:4px}
+.list p{margin:6px 0 0;color:var(--mute)}
+footer{padding:40px 0 56px;color:var(--mute);font-size:.88rem}
+@media (max-width:600px){body{font-size:16px}.top nav a{margin-left:14px}}
+pre { line-height: 125%; }
+td.linenos .normal { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }
+span.linenos { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }
+td.linenos .special { color: #000000; background-color: #ffffc0; padding-left: 5px; padding-right: 5px; }
+span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 5px; padding-right: 5px; }
+.hl .hll { background-color: #49483e }
+.hl { background: #272822; color: #F8F8F2 }
+.hl .c { color: #959077 } /* Comment */
+.hl .err { color: #ED007E; background-color: #1E0010 } /* Error */
+.hl .esc { color: #F8F8F2 } /* Escape */
+.hl .g { color: #F8F8F2 } /* Generic */
+.hl .k { color: #66D9EF } /* Keyword */
+.hl .l { color: #AE81FF } /* Literal */
+.hl .n { color: #F8F8F2 } /* Name */
+.hl .o { color: #FF4689 } /* Operator */
+.hl .x { color: #F8F8F2 } /* Other */
+.hl .p { color: #F8F8F2 } /* Punctuation */
+.hl .ch { color: #959077 } /* Comment.Hashbang */
+.hl .cm { color: #959077 } /* Comment.Multiline */
+.hl .cp { color: #959077 } /* Comment.Preproc */
+.hl .cpf { color: #959077 } /* Comment.PreprocFile */
+.hl .c1 { color: #959077 } /* Comment.Single */
+.hl .cs { color: #959077 } /* Comment.Special */
+.hl .gd { color: #FF4689 } /* Generic.Deleted */
+.hl .ge { color: #F8F8F2; font-style: italic } /* Generic.Emph */
+.hl .ges { color: #F8F8F2; font-weight: bold; font-style: italic } /* Generic.EmphStrong */
+.hl .gr { color: #FF4689 } /* Generic.Error */
+.hl .gh { color: #F8F8F2 } /* Generic.Heading */
+.hl .gi { color: #A6E22E } /* Generic.Inserted */
+.hl .go { color: #66D9EF } /* Generic.Output */
+.hl .gp { color: #FF4689; font-weight: bold } /* Generic.Prompt */
+.hl .gs { color: #F8F8F2; font-weight: bold } /* Generic.Strong */
+.hl .gu { color: #959077 } /* Generic.Subheading */
+.hl .gt { color: #66D9EF } /* Generic.Traceback */
+.hl .kc { color: #66D9EF } /* Keyword.Constant */
+.hl .kd { color: #66D9EF } /* Keyword.Declaration */
+.hl .kn { color: #FF4689 } /* Keyword.Namespace */
+.hl .kp { color: #66D9EF } /* Keyword.Pseudo */
+.hl .kr { color: #66D9EF } /* Keyword.Reserved */
+.hl .kt { color: #66D9EF } /* Keyword.Type */
+.hl .ld { color: #E6DB74 } /* Literal.Date */
+.hl .m { color: #AE81FF } /* Literal.Number */
+.hl .s { color: #E6DB74 } /* Literal.String */
+.hl .na { color: #A6E22E } /* Name.Attribute */
+.hl .nb { color: #A6E22E } /* Name.Builtin */
+.hl .nc { color: #A6E22E } /* Name.Class */
+.hl .no { color: #66D9EF } /* Name.Constant */
+.hl .nd { color: #A6E22E } /* Name.Decorator */
+.hl .ni { color: #F8F8F2 } /* Name.Entity */
+.hl .ne { color: #A6E22E } /* Name.Exception */
+.hl .nf { color: #A6E22E } /* Name.Function */
+.hl .nl { color: #F8F8F2 } /* Name.Label */
+.hl .nn { color: #F8F8F2 } /* Name.Namespace */
+.hl .nx { color: #A6E22E } /* Name.Other */
+.hl .py { color: #F8F8F2 } /* Name.Property */
+.hl .nt { color: #FF4689 } /* Name.Tag */
+.hl .nv { color: #F8F8F2 } /* Name.Variable */
+.hl .ow { color: #FF4689 } /* Operator.Word */
+.hl .pm { color: #F8F8F2 } /* Punctuation.Marker */
+.hl .w { color: #F8F8F2 } /* Text.Whitespace */
+.hl .mb { color: #AE81FF } /* Literal.Number.Bin */
+.hl .mf { color: #AE81FF } /* Literal.Number.Float */
+.hl .mh { color: #AE81FF } /* Literal.Number.Hex */
+.hl .mi { color: #AE81FF } /* Literal.Number.Integer */
+.hl .mo { color: #AE81FF } /* Literal.Number.Oct */
+.hl .sa { color: #E6DB74 } /* Literal.String.Affix */
+.hl .sb { color: #E6DB74 } /* Literal.String.Backtick */
+.hl .sc { color: #E6DB74 } /* Literal.String.Char */
+.hl .dl { color: #E6DB74 } /* Literal.String.Delimiter */
+.hl .sd { color: #E6DB74 } /* Literal.String.Doc */
+.hl .s2 { color: #E6DB74 } /* Literal.String.Double */
+.hl .se { color: #AE81FF } /* Literal.String.Escape */
+.hl .sh { color: #E6DB74 } /* Literal.String.Heredoc */
+.hl .si { color: #E6DB74 } /* Literal.String.Interpol */
+.hl .sx { color: #E6DB74 } /* Literal.String.Other */
+.hl .sr { color: #E6DB74 } /* Literal.String.Regex */
+.hl .s1 { color: #E6DB74 } /* Literal.String.Single */
+.hl .ss { color: #E6DB74 } /* Literal.String.Symbol */
+.hl .bp { color: #A6E22E } /* Name.Builtin.Pseudo */
+.hl .fm { color: #A6E22E } /* Name.Function.Magic */
+.hl .vc { color: #F8F8F2 } /* Name.Variable.Class */
+.hl .vg { color: #F8F8F2 } /* Name.Variable.Global */
+.hl .vi { color: #F8F8F2 } /* Name.Variable.Instance */
+.hl .vm { color: #F8F8F2 } /* Name.Variable.Magic */
+.hl .il { color: #AE81FF } /* Literal.Number.Integer.Long */.hl pre{background:#1B2B3A}</style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="../../">問達工作室</a>
+  <nav aria-label="頁面導覽"><a href="../../">首頁</a><a href="../../blog/">文章</a><a href="../../#contact">預約診斷</a></nav>
+</header>
+<main class="wrap">
+<article>
+<h1>按一次結帳卻成立兩張訂單：前端擋連點不夠，要讓資料庫說「不」</h1>
+<div class="meta"><span>2026-11-18</span><span>資料庫</span></div>
+<p>客服轉來一則抱怨：客戶說他只按了一次「確認付款」，信箱卻收到兩封訂單成立通知，庫存也被扣了兩份。</p>
+<p>工程師的第一反應是：「不可能，結帳按鈕按下去就會變灰色，按不了第二次。」再往後端看，建立訂單前也有先查「這筆是不是已經存在」。兩道防線都在，重複訂單還是出現了。</p>
+<p>這篇用一個示範情境（以下的系統名稱、帳號、時間、金額都是虛構的）說明：<strong>前端擋連點只能降低機率；真正能保證「只成立一次」的，是資料庫的 UNIQUE 索引。</strong></p>
+<h2>第一步：先確認是真的重複，不是客戶下了兩次</h2>
+<p>先別急著改程式。第一件事是把重複的範圍查清楚：只有這一位客戶，還是早就有其他人中過？</p>
+<p>判斷方式很單純：同一位客戶、同一個金額、跟上一張單只差幾秒，幾乎不可能是人自己決定再買一次。下面這段 SQL 用 <code>LAG()</code> 找出每張訂單的「上一張同客戶、同金額訂單」，再挑出間隔 5 秒內的：</p>
+<div class="hl"><pre><span></span><code><span class="c1">-- 找出「同一位客戶、同一個金額、和上一張單相隔 5 秒內」的訂單</span>
+<span class="c1">-- MySQL 8／MariaDB 語法；SQL Server 的時間函式寫法不同</span>
+<span class="k">SELECT</span><span class="w"> </span><span class="n">id</span><span class="p">,</span><span class="w"> </span><span class="n">customer_id</span><span class="p">,</span><span class="w"> </span><span class="n">amount</span><span class="p">,</span><span class="w"> </span><span class="n">created_at</span><span class="p">,</span><span class="w"> </span><span class="n">prev_id</span><span class="p">,</span>
+<span class="w">       </span><span class="n">TIMESTAMPDIFF</span><span class="p">(</span><span class="n">MICROSECOND</span><span class="p">,</span><span class="w"> </span><span class="n">prev_at</span><span class="p">,</span><span class="w"> </span><span class="n">created_at</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mi">1000000</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">gap_sec</span>
+<span class="k">FROM</span><span class="w"> </span><span class="p">(</span>
+<span class="w">    </span><span class="k">SELECT</span><span class="w"> </span><span class="n">o</span><span class="p">.</span><span class="o">*</span><span class="p">,</span>
+<span class="w">           </span><span class="n">LAG</span><span class="p">(</span><span class="n">id</span><span class="p">)</span><span class="w">         </span><span class="n">OVER</span><span class="w"> </span><span class="n">w</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">prev_id</span><span class="p">,</span>
+<span class="w">           </span><span class="n">LAG</span><span class="p">(</span><span class="n">created_at</span><span class="p">)</span><span class="w"> </span><span class="n">OVER</span><span class="w"> </span><span class="n">w</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">prev_at</span>
+<span class="w">    </span><span class="k">FROM</span><span class="w"> </span><span class="n">orders</span><span class="w"> </span><span class="n">o</span>
+<span class="w">    </span><span class="n">WINDOW</span><span class="w"> </span><span class="n">w</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="p">(</span><span class="n">PARTITION</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">customer_id</span><span class="p">,</span><span class="w"> </span><span class="n">amount</span><span class="w"> </span><span class="k">ORDER</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">created_at</span><span class="p">)</span>
+<span class="p">)</span><span class="w"> </span><span class="n">t</span>
+<span class="k">WHERE</span><span class="w"> </span><span class="n">prev_at</span><span class="w"> </span><span class="k">IS</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span>
+<span class="w">  </span><span class="k">AND</span><span class="w"> </span><span class="n">created_at</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">prev_at</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nb">INTERVAL</span><span class="w"> </span><span class="mi">5</span><span class="w"> </span><span class="k">SECOND</span>
+<span class="k">ORDER</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">created_at</span><span class="p">;</span>
+</code></pre></div>
+
+<p>在示範資料（8 張訂單）上實際執行的結果：</p>
+<div class="hl"><pre><span></span><code>+------+-------------+---------+-------------------------+---------+---------+
+| id   | customer_id | amount  | created_at              | prev_id | gap_sec |
++------+-------------+---------+-------------------------+---------+---------+
+|    2 |        1001 | 1280.00 | 2026-11-12 10:15:03.410 |       1 |  0.2900 |
+|    7 |        1004 |  980.00 | 2026-11-13 09:12:57.050 |       6 |  1.2500 |
++------+-------------+---------+-------------------------+---------+---------+
+</code></pre></div>
+
+<p>兩組重複，間隔分別是 0.29 秒和 1.25 秒。0.29 秒不是人會「再下一次單」的速度，而是同一個動作送出了兩次請求。另外一組也提醒我們：被抱怨的那一位不是唯一的受害者，修完程式之後，這些舊的重複訂單也要逐筆處理（取消、退款），不要直接從資料庫刪掉。</p>
+<h2>第二步：為什麼按鈕變灰了還擋不住</h2>
+<p>「按下去就變灰」是前端的 JavaScript 做的，它擋得住大部分情況，但擋不住這些：</p>
+<ul>
+<li>網路慢、畫面沒反應，使用者按重新整理或上一頁，再送一次</li>
+<li>手機上手指連點，第二下在按鈕變灰之前就送出去了</li>
+<li>前端程式設定了「逾時自動重試」，第一次其實已經成功，只是回應太慢</li>
+<li>頁面的 JavaScript 還沒載入完，使用者就按了按鈕</li>
+</ul>
+<p>這些情況的共通點是：<strong>後端會收到兩個內容完全一樣的請求，而且可能幾乎同時到。</strong> 所以防線必須放在後端。</p>
+<h2>第三步：後端「先查再寫」為什麼也沒用</h2>
+<p>這個示範系統的後端其實有檢查：結帳頁會產生一把只屬於這次結帳的鍵（冪等鍵，idempotency key），建立訂單前先查「這把鍵有沒有訂單了」，沒有才新增。</p>
+<p>問題出在「查」和「寫」之間有空檔。扣庫存、呼叫金流都要時間，兩個請求同時進來時，順序會變成這樣：</p>
+<figure><img src="fig-1.svg" alt="先查再寫：兩個請求都在對方寫入之前查詢，兩邊都以為「還沒有」" loading="lazy"><figcaption>先查再寫：兩個請求都在對方寫入之前查詢，兩邊都以為「還沒有」</figcaption></figure>
+<p>這不是程式寫錯了哪一行，而是「檢查」和「寫入」是兩個分開的動作，中間誰都可以插隊。只要在程式裡判斷「有沒有」，就會有這個空檔；伺服器越忙、處理時間越長，空檔越大。</p>
+<h2>第四步：把「只能一筆」交給資料庫</h2>
+<p>解法的方向是反過來：<strong>不要先查，直接寫；讓資料庫的 UNIQUE 索引決定誰先到。</strong> 同一把鍵只能存在一筆，第二個請求寫入時會被資料庫拒絕（MySQL／MariaDB 的錯誤碼是 1062），我們再把這個「拒絕」解讀成「這筆請求之前已經處理過了」，回傳第一次建立的訂單。</p>
+<div class="hl"><pre><span></span><code><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">orders</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">UNIQUE</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="n">uq_orders_idem</span><span class="w"> </span><span class="p">(</span><span class="n">idempotency_key</span><span class="p">);</span>
+</code></pre></div>
+
+<figure><img src="fig-2.svg" alt="冪等寫法：直接新增，撞到 UNIQUE 索引就回傳既有訂單" loading="lazy"><figcaption>冪等寫法：直接新增，撞到 UNIQUE 索引就回傳既有訂單</figcaption></figure>
+<p>用 PHP（PDO）寫起來是這樣：</p>
+<div class="hl"><pre><span></span><code><span class="x">// 新寫法：直接新增，讓資料庫的 UNIQUE 索引決定誰先到</span>
+<span class="x">function createOrderIdempotent(PDO $pdo, int $customerId, string $amount, string $key): array</span>
+<span class="x">{</span>
+<span class="x">    $pdo-&gt;beginTransaction();</span>
+<span class="x">    try {</span>
+<span class="x">        $pdo-&gt;prepare('INSERT INTO orders (customer_id, amount, idempotency_key) VALUES (?, ?, ?)')</span>
+<span class="x">            -&gt;execute([$customerId, $amount, $key]);</span>
+<span class="x">        $id = (int) $pdo-&gt;lastInsertId();</span>
+
+<span class="x">        usleep(300_000); // 同樣的處理時間，放在交易裡</span>
+
+<span class="x">        $pdo-&gt;commit();</span>
+<span class="x">        return ['created', $id];</span>
+<span class="x">    } catch (PDOException $e) {</span>
+<span class="x">        $pdo-&gt;rollBack();</span>
+<span class="x">        if (($e-&gt;errorInfo[1] ?? null) !== 1062) { // 1062 = Duplicate entry</span>
+<span class="x">            throw $e;</span>
+<span class="x">        }</span>
+<span class="x">        // 鍵已存在：不是錯誤，而是「同一筆請求又來了一次」，回傳第一次建立的訂單</span>
+<span class="x">        $stmt = $pdo-&gt;prepare('SELECT id FROM orders WHERE idempotency_key = ?');</span>
+<span class="x">        $stmt-&gt;execute([$key]);</span>
+<span class="x">        return ['existing', (int) $stmt-&gt;fetchColumn()];</span>
+<span class="x">    }</span>
+<span class="x">}</span>
+</code></pre></div>
+
+<p>為了確認兩種寫法真的有差，我用 MariaDB 10.11 和 PHP 8.3 做了一個小實驗：同一把鍵、同時開兩個 PHP 程序送出建立訂單（模擬連點兩下），中間都有 0.3 秒的處理時間。舊寫法跑「先查再寫」，新寫法跑上面這段。實際執行的輸出：</p>
+<figure><img src="fig-3.png" alt="實際執行結果：先查再寫成立了兩張訂單；改成 UNIQUE 索引後只有一張，第二個請求拿到的是同一張訂單" loading="lazy"><figcaption>實際執行結果：先查再寫成立了兩張訂單；改成 UNIQUE 索引後只有一張，第二個請求拿到的是同一張訂單</figcaption></figure>
+<p>兩個請求誰先搶到，每次執行可能不同，但新寫法的結果固定只有一張訂單。注意新寫法裡，後到的請求也花了 0.3 秒：它在寫入時遇到同一把鍵、對方還沒 commit，資料庫會讓它等，等對方 commit 之後才回報 1062。這段等待正是我們要的效果。</p>
+<h2>容易踩到的兩個坑</h2>
+<p><strong>坑一：撞鍵之後，要先 ROLLBACK 再查。</strong> MySQL／MariaDB 的 InnoDB 預設隔離等級是 REPEATABLE READ，交易裡第一次讀取資料時會建立一份快照。如果交易裡在 INSERT 之前已經讀過資料（例如先查商品價格），撞到 1062 之後直接在同一個交易裡查，可能查不到另一個請求剛 commit 的那張訂單。我在同一個 MariaDB 環境另外驗證過：不 rollback 就查，拿到的是 <code>false</code>；先 rollback 再查，才拿到正確的訂單編號。</p>
+<p><strong>坑二：舊資料的鍵是空的，加索引前要先確認資料庫怎麼看待 NULL。</strong> 舊訂單沒有冪等鍵，欄位會是 NULL。MySQL／MariaDB 的 UNIQUE 索引允許多筆 NULL，所以可以直接加（這點有在 MariaDB 上驗證）。SQL Server 不一樣：一般的 UNIQUE 索引只允許一筆 NULL，要改用篩選索引：</p>
+<div class="hl"><pre><span></span><code><span class="c1">-- SQL Server：只對有值的鍵做唯一限制（本文環境沒有 SQL Server，這段未實際執行）</span>
+<span class="k">CREATE</span><span class="w"> </span><span class="k">UNIQUE</span><span class="w"> </span><span class="k">INDEX</span><span class="w"> </span><span class="n">uq_orders_idem</span>
+<span class="w">    </span><span class="k">ON</span><span class="w"> </span><span class="n">orders</span><span class="w"> </span><span class="p">(</span><span class="n">idempotency_key</span><span class="p">)</span>
+<span class="w">    </span><span class="k">WHERE</span><span class="w"> </span><span class="n">idempotency_key</span><span class="w"> </span><span class="k">IS</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">;</span>
+</code></pre></div>
+
+<p>最後，冪等鍵要在「打開結帳頁」時產生一次，放進表單的隱藏欄位，送出幾次都帶同一把；不要在按下按鈕時才產生，否則每次重送都是新的鍵，等於沒擋。</p>
+<blockquote>
+<p>本文的 PHP 程式、找重複訂單的 SQL、ROLLBACK 與 NULL 的行為，都在 MariaDB 10.11.14 與 PHP 8.3.6 實際執行過，輸出與文中相同。SQL Server 的篩選索引沒有實際執行，使用前請先在測試環境確認。</p>
+</blockquote>
+<h2>學到什麼</h2>
+<ul>
+<li>前端擋連點是體驗優化，不是資料正確性的保證。重新整理、重試、手機連點都會讓後端收到兩次請求。</li>
+<li>「先查再寫」在同時進來的請求面前一定有空檔。要保證唯一，就把規則寫進資料庫的 UNIQUE 索引。</li>
+<li>撞到唯一鍵不是錯誤，而是「這筆已經處理過」的訊號；回傳第一次的結果，使用者就不會看到奇怪的錯誤畫面。</li>
+<li>修好程式之後，記得回頭查出已經發生的重複資料，逐筆處理。</li>
+</ul>
+<p>如果你的系統也出現重複訂單、重複扣款這類「偶爾才發生、查不到原因」的資料錯亂，問達工作室可以幫你從資料和程式兩邊一起找出缺口。</p>
+<div class="post-end note">問達工作室｜系統救火與自動化・<a href="../../">服務說明</a>・<a href="../../blog/">更多文章</a></div>
+</article>
+</main>
+<footer class="wrap">© 2026 問達工作室・<a href="../../blog/feed.xml">RSS</a></footer>
+</body>
+</html>
