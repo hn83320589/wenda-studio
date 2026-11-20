@@ -198,7 +198,14 @@ class Renderer:
                 const w = el.viewBox.baseVal.width;
                 el.setAttribute('width', w);
                 el.style.maxWidth = 'none';
-                return svg;
+                // mermaid 回傳的字串在 foreignObject 裡用 HTML 寫法（<br>），
+                // 不是合法 XML，用 <img> 載入 .svg 時會整張顯示不出來；改用 XMLSerializer 輸出
+                const tmp = document.createElement('div');
+                tmp.innerHTML = svg;
+                const out = tmp.querySelector('svg');
+                // 寫死原本寬度：<img> 不吃 SVG 內的 max-width，width="100%" 會把小圖放大到整欄
+                out.setAttribute('width', w);
+                return new XMLSerializer().serializeToString(out);
             }""",
             [code, MERMAID_CONFIG],
         )
