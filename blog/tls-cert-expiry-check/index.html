@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>憑證到期讓網站掛掉：設了自動續期，也要每天檢查一次「實際送出」的憑證｜問達工作室</title>
+<meta name="description" content="網站跳出「你的連線不是私人連線」，原因是 TLS 憑證過期。這篇用一個示範情境，說明自動續期為什麼還是會漏、為什麼要檢查伺服器實際送出的憑證而不是硬碟上的檔案，並附一支每天跑一次、30 天前就提醒的 C# 小程式。">
+<meta property="og:title" content="憑證到期讓網站掛掉：設了自動續期，也要每天檢查一次「實際送出」的憑證｜問達工作室">
+<meta property="og:description" content="網站跳出「你的連線不是私人連線」，原因是 TLS 憑證過期。這篇用一個示範情境，說明自動續期為什麼還是會漏、為什麼要檢查伺服器實際送出的憑證而不是硬碟上的檔案，並附一支每天跑一次、30 天前就提醒的 C# 小程式。">
+<meta property="og:type" content="article">
+<meta property="og:image" content="https://hn83320589.github.io/wenda-studio/blog/tls-cert-expiry-check/fig-1.png">
+<link rel="alternate" type="application/rss+xml" title="問達工作室文章" href="../../blog/feed.xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<style>
+:root{--mist:#EEF3F2;--pane:#DCEAE7;--edge:#2F7F78;--ink:#1B2B3A;--mute:#5A6B75;--amber:#C9861F;--white:#FBFDFC;
+--hand:"LXGW WenKai TC","Kaiti TC","BiauKai",serif;--sans:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+--mono:"JetBrains Mono","SFMono-Regular",Consolas,monospace}
+*{box-sizing:border-box}
+body{margin:0;background:var(--mist);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.85;-webkit-font-smoothing:antialiased}
+a{color:var(--edge);text-underline-offset:3px}
+:focus-visible{outline:3px solid var(--amber);outline-offset:3px}
+.wrap{width:min(760px,100% - 40px);margin-inline:auto}
+.top{display:flex;justify-content:space-between;align-items:center;padding:22px 0;width:min(1080px,100% - 40px);margin-inline:auto}
+.brand{font-family:var(--hand);font-weight:700;font-size:1.2rem;color:var(--ink);text-decoration:none}
+.top nav a{margin-left:20px;color:var(--ink);text-decoration:none;font-size:.95rem}
+.top nav a:hover{color:var(--edge)}
+h1{font-family:var(--hand);font-size:clamp(1.9rem,4vw,2.6rem);line-height:1.3;margin:24px 0 10px}
+h2{font-family:var(--hand);font-size:1.55rem;line-height:1.4;margin:48px 0 12px}
+h3{font-size:1.12rem;margin:32px 0 8px}
+.meta{color:var(--mute);font-size:.92rem;margin-bottom:36px}
+.meta span+span::before{content:"／";margin:0 6px;color:rgba(47,127,120,.5)}
+article p,article li{max-width:40em}
+article img{max-width:100%;height:auto}
+figure{margin:32px 0;text-align:center}
+figure img{background:var(--white);border:1px solid rgba(47,127,120,.3);border-radius:8px;padding:12px}
+figcaption{color:var(--mute);font-size:.9rem;margin-top:8px}
+code{font-family:var(--mono);font-size:.88em;background:rgba(220,234,231,.8);padding:1px 5px;border-radius:4px}
+pre{background:#1B2B3A;color:#E6EEF0;padding:18px 20px;border-radius:8px;overflow-x:auto;line-height:1.6;font-size:.88rem}
+pre code{background:none;padding:0;color:inherit;font-size:inherit}
+blockquote{margin:24px 0;padding:4px 20px;border-left:3px solid var(--amber);background:rgba(201,134,31,.08);color:var(--ink)}
+table{border-collapse:collapse;width:100%;margin:24px 0;font-size:.95rem;background:var(--white)}
+th,td{border:1px solid rgba(47,127,120,.3);padding:8px 12px;text-align:left;vertical-align:top}
+th{background:var(--pane)}
+.note{color:var(--mute);font-size:.9rem}
+.post-end{margin:56px 0 24px;padding-top:24px;border-top:1px dashed rgba(47,127,120,.45)}
+.list{list-style:none;padding:0;margin:0}
+.list li{padding:22px 0;border-bottom:1px solid rgba(47,127,120,.22)}
+.list a.t{font-size:1.15rem;font-weight:700;color:var(--ink);text-decoration:none}
+.list a.t:hover{color:var(--edge)}
+.list .d{color:var(--mute);font-size:.88rem;display:block;margin-bottom:4px}
+.list p{margin:6px 0 0;color:var(--mute)}
+footer{padding:40px 0 56px;color:var(--mute);font-size:.88rem}
+@media (max-width:600px){body{font-size:16px}.top nav a{margin-left:14px}}
+pre { line-height: 125%; }
+td.linenos .normal { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }
+span.linenos { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }
+td.linenos .special { color: #000000; background-color: #ffffc0; padding-left: 5px; padding-right: 5px; }
+span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 5px; padding-right: 5px; }
+.hl .hll { background-color: #49483e }
+.hl { background: #272822; color: #F8F8F2 }
+.hl .c { color: #959077 } /* Comment */
+.hl .err { color: #ED007E; background-color: #1E0010 } /* Error */
+.hl .esc { color: #F8F8F2 } /* Escape */
+.hl .g { color: #F8F8F2 } /* Generic */
+.hl .k { color: #66D9EF } /* Keyword */
+.hl .l { color: #AE81FF } /* Literal */
+.hl .n { color: #F8F8F2 } /* Name */
+.hl .o { color: #FF4689 } /* Operator */
+.hl .x { color: #F8F8F2 } /* Other */
+.hl .p { color: #F8F8F2 } /* Punctuation */
+.hl .ch { color: #959077 } /* Comment.Hashbang */
+.hl .cm { color: #959077 } /* Comment.Multiline */
+.hl .cp { color: #959077 } /* Comment.Preproc */
+.hl .cpf { color: #959077 } /* Comment.PreprocFile */
+.hl .c1 { color: #959077 } /* Comment.Single */
+.hl .cs { color: #959077 } /* Comment.Special */
+.hl .gd { color: #FF4689 } /* Generic.Deleted */
+.hl .ge { color: #F8F8F2; font-style: italic } /* Generic.Emph */
+.hl .ges { color: #F8F8F2; font-weight: bold; font-style: italic } /* Generic.EmphStrong */
+.hl .gr { color: #FF4689 } /* Generic.Error */
+.hl .gh { color: #F8F8F2 } /* Generic.Heading */
+.hl .gi { color: #A6E22E } /* Generic.Inserted */
+.hl .go { color: #66D9EF } /* Generic.Output */
+.hl .gp { color: #FF4689; font-weight: bold } /* Generic.Prompt */
+.hl .gs { color: #F8F8F2; font-weight: bold } /* Generic.Strong */
+.hl .gu { color: #959077 } /* Generic.Subheading */
+.hl .gt { color: #66D9EF } /* Generic.Traceback */
+.hl .kc { color: #66D9EF } /* Keyword.Constant */
+.hl .kd { color: #66D9EF } /* Keyword.Declaration */
+.hl .kn { color: #FF4689 } /* Keyword.Namespace */
+.hl .kp { color: #66D9EF } /* Keyword.Pseudo */
+.hl .kr { color: #66D9EF } /* Keyword.Reserved */
+.hl .kt { color: #66D9EF } /* Keyword.Type */
+.hl .ld { color: #E6DB74 } /* Literal.Date */
+.hl .m { color: #AE81FF } /* Literal.Number */
+.hl .s { color: #E6DB74 } /* Literal.String */
+.hl .na { color: #A6E22E } /* Name.Attribute */
+.hl .nb { color: #A6E22E } /* Name.Builtin */
+.hl .nc { color: #A6E22E } /* Name.Class */
+.hl .no { color: #66D9EF } /* Name.Constant */
+.hl .nd { color: #A6E22E } /* Name.Decorator */
+.hl .ni { color: #F8F8F2 } /* Name.Entity */
+.hl .ne { color: #A6E22E } /* Name.Exception */
+.hl .nf { color: #A6E22E } /* Name.Function */
+.hl .nl { color: #F8F8F2 } /* Name.Label */
+.hl .nn { color: #F8F8F2 } /* Name.Namespace */
+.hl .nx { color: #A6E22E } /* Name.Other */
+.hl .py { color: #F8F8F2 } /* Name.Property */
+.hl .nt { color: #FF4689 } /* Name.Tag */
+.hl .nv { color: #F8F8F2 } /* Name.Variable */
+.hl .ow { color: #FF4689 } /* Operator.Word */
+.hl .pm { color: #F8F8F2 } /* Punctuation.Marker */
+.hl .w { color: #F8F8F2 } /* Text.Whitespace */
+.hl .mb { color: #AE81FF } /* Literal.Number.Bin */
+.hl .mf { color: #AE81FF } /* Literal.Number.Float */
+.hl .mh { color: #AE81FF } /* Literal.Number.Hex */
+.hl .mi { color: #AE81FF } /* Literal.Number.Integer */
+.hl .mo { color: #AE81FF } /* Literal.Number.Oct */
+.hl .sa { color: #E6DB74 } /* Literal.String.Affix */
+.hl .sb { color: #E6DB74 } /* Literal.String.Backtick */
+.hl .sc { color: #E6DB74 } /* Literal.String.Char */
+.hl .dl { color: #E6DB74 } /* Literal.String.Delimiter */
+.hl .sd { color: #E6DB74 } /* Literal.String.Doc */
+.hl .s2 { color: #E6DB74 } /* Literal.String.Double */
+.hl .se { color: #AE81FF } /* Literal.String.Escape */
+.hl .sh { color: #E6DB74 } /* Literal.String.Heredoc */
+.hl .si { color: #E6DB74 } /* Literal.String.Interpol */
+.hl .sx { color: #E6DB74 } /* Literal.String.Other */
+.hl .sr { color: #E6DB74 } /* Literal.String.Regex */
+.hl .s1 { color: #E6DB74 } /* Literal.String.Single */
+.hl .ss { color: #E6DB74 } /* Literal.String.Symbol */
+.hl .bp { color: #A6E22E } /* Name.Builtin.Pseudo */
+.hl .fm { color: #A6E22E } /* Name.Function.Magic */
+.hl .vc { color: #F8F8F2 } /* Name.Variable.Class */
+.hl .vg { color: #F8F8F2 } /* Name.Variable.Global */
+.hl .vi { color: #F8F8F2 } /* Name.Variable.Instance */
+.hl .vm { color: #F8F8F2 } /* Name.Variable.Magic */
+.hl .il { color: #AE81FF } /* Literal.Number.Integer.Long */.hl pre{background:#1B2B3A}</style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="../../">問達工作室</a>
+  <nav aria-label="頁面導覽"><a href="../../">首頁</a><a href="../../blog/">文章</a><a href="../../#contact">預約診斷</a></nav>
+</header>
+<main class="wrap">
+<article>
+<h1>憑證到期讓網站掛掉：設了自動續期，也要每天檢查一次「實際送出」的憑證</h1>
+<div class="meta"><span>2026-11-20</span><span>維護與預防</span></div>
+<p>某天早上，同事說後台登入頁打不開，瀏覽器跳出「你的連線不是私人連線」，錯誤代碼是 <code>NET::ERR_CERT_DATE_INVALID</code>。前台網站正常，API 也正常，只有後台壞了。</p>
+<p>這個錯誤代碼的意思很直接：伺服器送出的 TLS 憑證不在有效期間內，多半就是過期了。換一張新憑證，網站就會恢復。比較麻煩的是下一個問題：<strong>明明設了自動續期，為什麼還會過期？其他網域會不會也快了？</strong></p>
+<p>以下用一個示範情境說明（網域、路徑、時間都是虛構的，網域用的是保留給測試的 <code>.test</code>）：一個小型網站有前台 <code>www</code>、API <code>api</code>、後台 <code>admin</code> 三個網域，憑證都是 90 天的免費憑證。</p>
+<h2>先把「還剩幾天」全部列出來</h2>
+<p>與其一個一個網域打開瀏覽器點鎖頭看，不如寫一支小程式，對每個網域實際建立一次 TLS 連線，把伺服器送出的憑證讀出來，算出還剩幾天。</p>
+<p>要檢查的網域放在一個文字檔：</p>
+<div class="hl"><pre><span></span><code># hosts.txt：要檢查的網域，一行一個（預設埠號 443，其他埠號寫成 主機:埠號）
+www.demo-shop.test
+api.demo-shop.test
+admin.demo-shop.test
+</code></pre></div>
+
+<p>程式本體（.NET 8 主控台程式，只用內建類別，不需要另外裝套件）：</p>
+<div class="hl"><pre><span></span><code><span class="k">using</span><span class="w"> </span><span class="nn">System.Net.Security</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="nn">System.Net.Sockets</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="nn">System.Security.Cryptography.X509Certificates</span><span class="p">;</span>
+
+<span class="c1">// 用法：dotnet run -- hosts.txt [提醒門檻天數，預設 30]</span>
+<span class="c1">// hosts.txt 一行一個「主機名稱」或「主機名稱:埠號」，# 開頭是註解</span>
+<span class="c1">// 結束代碼：全部正常是 0，任何一台需要處理是 1（讓排程判斷要不要通知）</span>
+
+<span class="kt">var</span><span class="w"> </span><span class="n">warnDays</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">args</span><span class="p">.</span><span class="n">Length</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="kt">int</span><span class="p">.</span><span class="n">Parse</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="mi">30</span><span class="p">;</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">tw</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">TimeSpan</span><span class="p">.</span><span class="n">FromHours</span><span class="p">(</span><span class="mi">8</span><span class="p">);</span><span class="w">          </span><span class="c1">// 臺灣沒有日光節約時間，固定 UTC+8</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">now</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DateTimeOffset</span><span class="p">.</span><span class="n">UtcNow</span><span class="p">;</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">allOk</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">true</span><span class="p">;</span>
+
+<span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">$"檢查時間：{now.ToOffset(tw):yyyy-MM-dd HH:mm}（UTC+8）  提醒門檻：{warnDays} 天"</span><span class="p">);</span>
+<span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">();</span>
+
+<span class="k">foreach</span><span class="w"> </span><span class="p">(</span><span class="kt">var</span><span class="w"> </span><span class="n">raw</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">File</span><span class="p">.</span><span class="n">ReadAllLines</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="kt">var</span><span class="w"> </span><span class="n">line</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">raw</span><span class="p">.</span><span class="n">Trim</span><span class="p">();</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">line</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="s">""</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="n">line</span><span class="p">.</span><span class="n">StartsWith</span><span class="p">(</span><span class="sc">'#'</span><span class="p">))</span><span class="w"> </span><span class="k">continue</span><span class="p">;</span>
+
+<span class="w">    </span><span class="kt">var</span><span class="w"> </span><span class="n">parts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">line</span><span class="p">.</span><span class="n">Split</span><span class="p">(</span><span class="sc">':'</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">var</span><span class="w"> </span><span class="n">host</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">parts</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span>
+<span class="w">    </span><span class="kt">var</span><span class="w"> </span><span class="n">port</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">parts</span><span class="p">.</span><span class="n">Length</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="kt">int</span><span class="p">.</span><span class="n">Parse</span><span class="p">(</span><span class="n">parts</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="mi">443</span><span class="p">;</span>
+
+<span class="w">    </span><span class="kt">var</span><span class="w"> </span><span class="p">(</span><span class="n">notAfter</span><span class="p">,</span><span class="w"> </span><span class="n">status</span><span class="p">,</span><span class="w"> </span><span class="n">ok</span><span class="p">)</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="n">CheckAsync</span><span class="p">(</span><span class="n">host</span><span class="p">,</span><span class="w"> </span><span class="n">port</span><span class="p">,</span><span class="w"> </span><span class="n">now</span><span class="p">,</span><span class="w"> </span><span class="n">warnDays</span><span class="p">);</span>
+<span class="w">    </span><span class="n">allOk</span><span class="w"> </span><span class="o">&amp;=</span><span class="w"> </span><span class="n">ok</span><span class="p">;</span>
+
+<span class="w">    </span><span class="kt">var</span><span class="w"> </span><span class="n">expires</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">notAfter</span><span class="w"> </span><span class="k">is</span><span class="w"> </span><span class="k">null</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="s">"-"</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="n">notAfter</span><span class="p">.</span><span class="n">Value</span><span class="p">.</span><span class="n">ToOffset</span><span class="p">(</span><span class="n">tw</span><span class="p">).</span><span class="n">ToString</span><span class="p">(</span><span class="s">"yyyy-MM-dd HH:mm"</span><span class="p">);</span>
+<span class="w">    </span><span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">$"{(ok ? "</span><span class="w">  </span><span class="s">" : "</span><span class="o">!</span><span class="w"> </span><span class="s">")}{$"</span><span class="p">{</span><span class="n">host</span><span class="p">}:{</span><span class="n">port</span><span class="p">}</span><span class="s">",-28} {expires,-17} {status}"</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="k">return</span><span class="w"> </span><span class="n">allOk</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+
+<span class="k">static</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="n">Task</span><span class="o">&lt;</span><span class="p">(</span><span class="n">DateTimeOffset</span><span class="o">?</span><span class="w"> </span><span class="n">NotAfter</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="n">Status</span><span class="p">,</span><span class="w"> </span><span class="kt">bool</span><span class="w"> </span><span class="n">Ok</span><span class="p">)</span><span class="o">&gt;</span><span class="w"> </span><span class="n">CheckAsync</span><span class="p">(</span>
+<span class="w">    </span><span class="kt">string</span><span class="w"> </span><span class="n">host</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">port</span><span class="p">,</span><span class="w"> </span><span class="n">DateTimeOffset</span><span class="w"> </span><span class="n">now</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">warnDays</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">using</span><span class="w"> </span><span class="nn">var</span><span class="w"> </span><span class="n">cts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">CancellationTokenSource</span><span class="p">(</span><span class="n">TimeSpan</span><span class="p">.</span><span class="n">FromSeconds</span><span class="p">(</span><span class="mi">10</span><span class="p">));</span>
+<span class="w">    </span><span class="n">X509Certificate2</span><span class="o">?</span><span class="w"> </span><span class="n">cert</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">null</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">var</span><span class="w"> </span><span class="n">errors</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SslPolicyErrors</span><span class="p">.</span><span class="n">None</span><span class="p">;</span>
+
+<span class="w">    </span><span class="k">try</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="k">using</span><span class="w"> </span><span class="nn">var</span><span class="w"> </span><span class="n">tcp</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">TcpClient</span><span class="p">();</span>
+<span class="w">        </span><span class="k">await</span><span class="w"> </span><span class="n">tcp</span><span class="p">.</span><span class="n">ConnectAsync</span><span class="p">(</span><span class="n">host</span><span class="p">,</span><span class="w"> </span><span class="n">port</span><span class="p">,</span><span class="w"> </span><span class="n">cts</span><span class="p">.</span><span class="n">Token</span><span class="p">);</span>
+<span class="w">        </span><span class="k">using</span><span class="w"> </span><span class="nn">var</span><span class="w"> </span><span class="n">ssl</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">SslStream</span><span class="p">(</span><span class="n">tcp</span><span class="p">.</span><span class="n">GetStream</span><span class="p">(),</span><span class="w"> </span><span class="n">leaveInnerStreamOpen</span><span class="p">:</span><span class="w"> </span><span class="k">false</span><span class="p">);</span>
+<span class="w">        </span><span class="k">await</span><span class="w"> </span><span class="n">ssl</span><span class="p">.</span><span class="n">AuthenticateAsClientAsync</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">SslClientAuthenticationOptions</span>
+<span class="w">        </span><span class="p">{</span>
+<span class="w">            </span><span class="c1">// SNI：同一個 IP 掛多個網域時，伺服器靠這個決定要回哪一張憑證</span>
+<span class="w">            </span><span class="n">TargetHost</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">host</span><span class="p">,</span>
+<span class="w">            </span><span class="c1">// 不管驗證結果都先收下，才讀得到「已經過期」的憑證；這支程式只讀憑證，不送任何資料</span>
+<span class="w">            </span><span class="n">RemoteCertificateValidationCallback</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">_</span><span class="p">,</span><span class="w"> </span><span class="n">c</span><span class="p">,</span><span class="w"> </span><span class="n">_</span><span class="p">,</span><span class="w"> </span><span class="n">e</span><span class="p">)</span><span class="w"> </span><span class="o">=&gt;</span>
+<span class="w">            </span><span class="p">{</span>
+<span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">c</span><span class="w"> </span><span class="k">is</span><span class="w"> </span><span class="k">not</span><span class="w"> </span><span class="k">null</span><span class="p">)</span><span class="w"> </span><span class="n">cert</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">X509Certificate2</span><span class="p">(</span><span class="n">c</span><span class="p">);</span>
+<span class="w">                </span><span class="n">errors</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">e</span><span class="p">;</span>
+<span class="w">                </span><span class="k">return</span><span class="w"> </span><span class="k">true</span><span class="p">;</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">        </span><span class="p">},</span><span class="w"> </span><span class="n">cts</span><span class="p">.</span><span class="n">Token</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">catch</span><span class="w"> </span><span class="p">(</span><span class="n">Exception</span><span class="w"> </span><span class="n">ex</span><span class="p">)</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="p">(</span><span class="k">null</span><span class="p">,</span><span class="w"> </span><span class="s">$"連線失敗：{ex.Message}"</span><span class="p">,</span><span class="w"> </span><span class="k">false</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">cert</span><span class="w"> </span><span class="k">is</span><span class="w"> </span><span class="k">null</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="p">(</span><span class="k">null</span><span class="p">,</span><span class="w"> </span><span class="s">"沒有取得憑證"</span><span class="p">,</span><span class="w"> </span><span class="k">false</span><span class="p">);</span>
+
+<span class="w">    </span><span class="kt">var</span><span class="w"> </span><span class="n">notAfter</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">DateTimeOffset</span><span class="p">(</span><span class="n">cert</span><span class="p">.</span><span class="n">NotAfter</span><span class="p">.</span><span class="n">ToUniversalTime</span><span class="p">());</span>
+<span class="w">    </span><span class="kt">var</span><span class="w"> </span><span class="n">days</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">notAfter</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">now</span><span class="p">).</span><span class="n">TotalDays</span><span class="p">;</span>
+
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">days</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="p">(</span><span class="n">notAfter</span><span class="p">,</span><span class="w"> </span><span class="s">$"已過期 {(int)Math.Ceiling(-days)} 天"</span><span class="p">,</span><span class="w"> </span><span class="k">false</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">errors</span><span class="p">.</span><span class="n">HasFlag</span><span class="p">(</span><span class="n">SslPolicyErrors</span><span class="p">.</span><span class="n">RemoteCertificateNameMismatch</span><span class="p">))</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="p">(</span><span class="n">notAfter</span><span class="p">,</span><span class="w"> </span><span class="s">"憑證上的網域名稱和主機不符"</span><span class="p">,</span><span class="w"> </span><span class="k">false</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">errors</span><span class="p">.</span><span class="n">HasFlag</span><span class="p">(</span><span class="n">SslPolicyErrors</span><span class="p">.</span><span class="n">RemoteCertificateChainErrors</span><span class="p">))</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="p">(</span><span class="n">notAfter</span><span class="p">,</span><span class="w"> </span><span class="s">"憑證鏈驗證失敗（常見原因：少了中繼憑證）"</span><span class="p">,</span><span class="w"> </span><span class="k">false</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">days</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">warnDays</span><span class="p">)</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="p">(</span><span class="n">notAfter</span><span class="p">,</span><span class="w"> </span><span class="s">$"剩 {(int)Math.Floor(days)} 天，該續期了"</span><span class="p">,</span><span class="w"> </span><span class="k">false</span><span class="p">);</span>
+
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="p">(</span><span class="n">notAfter</span><span class="p">,</span><span class="w"> </span><span class="s">$"正常，剩 {(int)Math.Floor(days)} 天"</span><span class="p">,</span><span class="w"> </span><span class="k">true</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>有兩個細節值得說明：</p>
+<ul>
+<li><strong>驗證回呼一律回傳 <code>true</code>。</strong> 正常的程式不該這樣寫，因為這等於接受任何憑證。這裡這樣做，是因為憑證過期時驗證一定失敗，如果直接拒絕連線，就讀不到到期日了。這支程式只讀憑證、不傳任何資料，驗證結果另外記在 <code>errors</code> 裡判斷，所以這樣寫是安全的。不要把這段搬到會傳送資料的程式裡。</li>
+<li><strong><code>TargetHost</code> 一定要帶網域名稱。</strong> 很多主機用同一個 IP 掛好幾個網域，伺服器是看 TLS 握手時的網域名稱（SNI）決定要回哪一張憑證。只用 IP 連線，讀到的可能是別的網域的憑證。</li>
+</ul>
+<p>在示範環境跑一次：</p>
+<figure><img src="fig-1.png" alt="實際執行結果：三個網域裡，後台已經過期，API 也只剩 9 天" loading="lazy"><figcaption>實際執行結果：三個網域裡，後台已經過期，API 也只剩 9 天</figcaption></figure>
+<p>後台過期在預期之內，那是我們已經知道的問題。真正要緊的是第二行：<strong>API 只剩 9 天，可是自動續期明明有在跑。</strong></p>
+<h2>原因一：有網域根本不在自動續期裡</h2>
+<p>示範情境裡，後台網域是後來才加的，當時手動申請了一張憑證，沒有加進自動續期的設定。90 天後，它就照時間過期了。</p>
+<p>這種漏網之魚很常見：測試站、舊網域轉址、後來加上的子網域。自動續期只會續它知道的那幾張。解法很單純：每加一個網域，就同時加進續期設定和上面的 <code>hosts.txt</code>。</p>
+<h2>原因二：檔案續期了，伺服器還在用舊的</h2>
+<p>API 的情況比較隱蔽。到主機上看憑證檔，到期日是明年一月，看起來沒問題；但從外面連進來，拿到的卻是 11 月底到期的那一張：</p>
+<div class="hl"><pre><span></span><code>$ openssl x509 -in /srv/certs/api/fullchain.pem -noout -enddate
+notAfter=Jan 28 08:00:00 2027 GMT
+
+$ openssl s_client -connect api.demo-shop.test:443 -servername api.demo-shop.test &lt; /dev/null 2&gt;/dev/null | openssl x509 -noout -enddate
+notAfter=Nov 29 08:00:00 2026 GMT
+</code></pre></div>
+
+<figure><img src="fig-2.png" alt="實際執行結果：同一個網域，硬碟上的檔案已經續期，但伺服器送出去的還是舊憑證" loading="lazy"><figcaption>實際執行結果：同一個網域，硬碟上的檔案已經續期，但伺服器送出去的還是舊憑證</figcaption></figure>
+<p>原因是網頁伺服器（例如 nginx、Apache）在啟動或重新載入設定時，才會把憑證讀進記憶體。續期工具換掉檔案之後，如果沒有接著讓伺服器重新載入，伺服器就會一直送舊的那一張，直到它過期。以 certbot 為例，如果不是用 nginx 或 Apache 外掛申請（例如用 webroot 方式），就要自己設定 <code>--deploy-hook</code>，在續期成功後執行 <code>systemctl reload nginx</code> 之類的指令。（本文環境沒有實際執行 certbot，這段是依工具文件的說明，請以你使用的版本為準。）</p>
+<p>這也是為什麼檢查程式要<strong>連線到伺服器讀憑證，而不是讀硬碟上的檔案</strong>：使用者拿到的是伺服器送出的那一張，檔案再新都沒用。</p>
+<p>修正之後（示範環境裡是讓 API 服務改用新檔案重新啟動、後台換上新憑證），再跑一次：</p>
+<div class="hl"><pre><span></span><code>$ dotnet run -- hosts.txt
+檢查時間：2026-11-20 09:04（UTC+8）  提醒門檻：30 天
+
+  www.demo-shop.test:443       2027-01-23 16:00  正常，剩 64 天
+  api.demo-shop.test:443       2027-01-28 16:00  正常，剩 69 天
+  admin.demo-shop.test:443     2027-02-18 08:00  正常，剩 89 天
+
+$ echo $?
+0
+</code></pre></div>
+
+<h2>讓它每天自己跑</h2>
+<p>程式的結束代碼已經分好了：全部正常是 <code>0</code>，有任何一個網域需要處理是 <code>1</code>。排程只要看結束代碼決定要不要通知：</p>
+<figure><img src="fig-3.svg" alt="每天的檢查流程：只有出問題時才通知，正常的日子不打擾" loading="lazy"><figcaption>每天的檢查流程：只有出問題時才通知，正常的日子不打擾</figcaption></figure>
+<p>Linux 可以用 cron，例如每天早上 8 點 10 分跑一次，結束代碼不是 0 才寄信（下面這行沒有在本文環境實際排程，<code>mail</code> 要換成你主機上能用的通知方式）：</p>
+<div class="hl"><pre><span></span><code>10 8 * * * cd /opt/certcheck &amp;&amp; dotnet CertCheck.dll hosts.txt &gt; last.txt || mail -s "憑證檢查需要處理" you@example.com &lt; last.txt
+</code></pre></div>
+
+<p>Windows 則可以用工作排程器執行，再依結束代碼觸發通知（本文環境沒有 Windows，這部分沒有實際驗證）。</p>
+<p>有兩件事要注意：</p>
+<ul>
+<li><strong>在「外面」檢查。</strong> 最好從另一台機器跑，用的 DNS 要跟一般使用者一樣。在網站主機自己身上檢查，可能因為 hosts 設定或內部網路，連到的不是使用者連到的那一台。</li>
+<li><strong>30 天的門檻要配合憑證效期。</strong> 90 天的憑證通常在剩 30 天左右自動續期，所以剩不到 30 天還沒換，就代表續期出了問題。如果你的憑證效期比較短，門檻要跟著調。</li>
+</ul>
+<h2>為什麼現在更需要這支程式</h2>
+<p>過去 Let's Encrypt 會在憑證快到期時寄信提醒，但這項服務已經在 2025 年 6 月停止，不能再靠它當最後一道防線。</p>
+<p>另一方面，CA/Browser Forum 已經通過決議，公開信任的 TLS 憑證最長效期會分階段縮短：2026 年 3 月 15 日起最長 200 天，2027 年 3 月 15 日起 100 天，2029 年 3 月 15 日起 47 天。效期越短，續期越頻繁，續期流程中任何一個環節沒接好，出事的機會也越多。</p>
+<blockquote>
+<p>本文的 C# 程式、三次檢查輸出（含結束代碼）與 <code>openssl</code> 指令的輸出，都在 Ubuntu 24.04、.NET SDK 8.0.134 實際執行過，輸出與文中相同。示範用的憑證由本機自建的測試 CA 簽發，三個網域都指向本機上的 TLS 服務。cron 排程、certbot 與 Windows 工作排程器的部分沒有實際執行。</p>
+</blockquote>
+<h2>學到什麼</h2>
+<ul>
+<li>憑證過期不是突然發生的，到期日從申請那天就寫在憑證上了。缺的不是資訊，而是有人每天去看。</li>
+<li>「自動續期有在跑」不等於「使用者拿到新憑證」。要檢查伺服器實際送出的憑證，而不是硬碟上的檔案。</li>
+<li>檢查程式要把「連不上」「名稱不符」「憑證鏈錯誤」也當成問題回報，這些跟過期一樣會讓使用者看到警告頁。</li>
+<li>每加一個網域，就同時加進續期設定和檢查清單。</li>
+</ul>
+<p>如果你的網站曾經因為憑證過期掛掉，或不確定續期流程有沒有接好，問達工作室可以幫你把檢查和提醒設起來，讓下一次在 30 天前就知道。</p>
+<div class="post-end note">問達工作室｜系統救火與自動化・<a href="../../">服務說明</a>・<a href="../../blog/">更多文章</a></div>
+</article>
+</main>
+<footer class="wrap">© 2026 問達工作室・<a href="../../blog/feed.xml">RSS</a></footer>
+</body>
+</html>
