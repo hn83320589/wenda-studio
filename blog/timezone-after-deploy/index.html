@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>搬到雲端主機後，早上八點前的訂單從報表消失：時間欄位的三個坑｜問達工作室</title>
+<meta name="description" content="程式一行都沒改，只是換了一台主機，報表就少了早上的訂單、列表時間也差了 8 小時。這篇用一個示範情境，拆解主機時區、「今天」的範圍、API 時間格式三個坑，附上實際執行過的 C#、JavaScript 與 MySQL 範例，以及已經混在一起的舊資料怎麼修。">
+<meta property="og:title" content="搬到雲端主機後，早上八點前的訂單從報表消失：時間欄位的三個坑｜問達工作室">
+<meta property="og:description" content="程式一行都沒改，只是換了一台主機，報表就少了早上的訂單、列表時間也差了 8 小時。這篇用一個示範情境，拆解主機時區、「今天」的範圍、API 時間格式三個坑，附上實際執行過的 C#、JavaScript 與 MySQL 範例，以及已經混在一起的舊資料怎麼修。">
+<meta property="og:type" content="article">
+<meta property="og:image" content="https://hn83320589.github.io/wenda-studio/blog/timezone-after-deploy/fig-1.png">
+<link rel="alternate" type="application/rss+xml" title="問達工作室文章" href="../../blog/feed.xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<style>
+:root{--mist:#EEF3F2;--pane:#DCEAE7;--edge:#2F7F78;--ink:#1B2B3A;--mute:#5A6B75;--amber:#C9861F;--white:#FBFDFC;
+--hand:"LXGW WenKai TC","Kaiti TC","BiauKai",serif;--sans:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+--mono:"JetBrains Mono","SFMono-Regular",Consolas,monospace}
+*{box-sizing:border-box}
+body{margin:0;background:var(--mist);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.85;-webkit-font-smoothing:antialiased}
+a{color:var(--edge);text-underline-offset:3px}
+:focus-visible{outline:3px solid var(--amber);outline-offset:3px}
+.wrap{width:min(760px,100% - 40px);margin-inline:auto}
+.top{display:flex;justify-content:space-between;align-items:center;padding:22px 0;width:min(1080px,100% - 40px);margin-inline:auto}
+.brand{font-family:var(--hand);font-weight:700;font-size:1.2rem;color:var(--ink);text-decoration:none}
+.top nav a{margin-left:20px;color:var(--ink);text-decoration:none;font-size:.95rem}
+.top nav a:hover{color:var(--edge)}
+h1{font-family:var(--hand);font-size:clamp(1.9rem,4vw,2.6rem);line-height:1.3;margin:24px 0 10px}
+h2{font-family:var(--hand);font-size:1.55rem;line-height:1.4;margin:48px 0 12px}
+h3{font-size:1.12rem;margin:32px 0 8px}
+.meta{color:var(--mute);font-size:.92rem;margin-bottom:36px}
+.meta span+span::before{content:"／";margin:0 6px;color:rgba(47,127,120,.5)}
+article p,article li{max-width:40em}
+article img{max-width:100%;height:auto}
+figure{margin:32px 0;text-align:center}
+figure img{background:var(--white);border:1px solid rgba(47,127,120,.3);border-radius:8px;padding:12px}
+figcaption{color:var(--mute);font-size:.9rem;margin-top:8px}
+code{font-family:var(--mono);font-size:.88em;background:rgba(220,234,231,.8);padding:1px 5px;border-radius:4px}
+pre{background:#1B2B3A;color:#E6EEF0;padding:18px 20px;border-radius:8px;overflow-x:auto;line-height:1.6;font-size:.88rem}
+pre code{background:none;padding:0;color:inherit;font-size:inherit}
+blockquote{margin:24px 0;padding:4px 20px;border-left:3px solid var(--amber);background:rgba(201,134,31,.08);color:var(--ink)}
+table{border-collapse:collapse;width:100%;margin:24px 0;font-size:.95rem;background:var(--white)}
+th,td{border:1px solid rgba(47,127,120,.3);padding:8px 12px;text-align:left;vertical-align:top}
+th{background:var(--pane)}
+.note{color:var(--mute);font-size:.9rem}
+.post-end{margin:56px 0 24px;padding-top:24px;border-top:1px dashed rgba(47,127,120,.45)}
+.list{list-style:none;padding:0;margin:0}
+.list li{padding:22px 0;border-bottom:1px solid rgba(47,127,120,.22)}
+.list a.t{font-size:1.15rem;font-weight:700;color:var(--ink);text-decoration:none}
+.list a.t:hover{color:var(--edge)}
+.list .d{color:var(--mute);font-size:.88rem;display:block;margin-bottom:4px}
+.list p{margin:6px 0 0;color:var(--mute)}
+footer{padding:40px 0 56px;color:var(--mute);font-size:.88rem}
+@media (max-width:600px){body{font-size:16px}.top nav a{margin-left:14px}}
+pre { line-height: 125%; }
+td.linenos .normal { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }
+span.linenos { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }
+td.linenos .special { color: #000000; background-color: #ffffc0; padding-left: 5px; padding-right: 5px; }
+span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 5px; padding-right: 5px; }
+.hl .hll { background-color: #49483e }
+.hl { background: #272822; color: #F8F8F2 }
+.hl .c { color: #959077 } /* Comment */
+.hl .err { color: #ED007E; background-color: #1E0010 } /* Error */
+.hl .esc { color: #F8F8F2 } /* Escape */
+.hl .g { color: #F8F8F2 } /* Generic */
+.hl .k { color: #66D9EF } /* Keyword */
+.hl .l { color: #AE81FF } /* Literal */
+.hl .n { color: #F8F8F2 } /* Name */
+.hl .o { color: #FF4689 } /* Operator */
+.hl .x { color: #F8F8F2 } /* Other */
+.hl .p { color: #F8F8F2 } /* Punctuation */
+.hl .ch { color: #959077 } /* Comment.Hashbang */
+.hl .cm { color: #959077 } /* Comment.Multiline */
+.hl .cp { color: #959077 } /* Comment.Preproc */
+.hl .cpf { color: #959077 } /* Comment.PreprocFile */
+.hl .c1 { color: #959077 } /* Comment.Single */
+.hl .cs { color: #959077 } /* Comment.Special */
+.hl .gd { color: #FF4689 } /* Generic.Deleted */
+.hl .ge { color: #F8F8F2; font-style: italic } /* Generic.Emph */
+.hl .ges { color: #F8F8F2; font-weight: bold; font-style: italic } /* Generic.EmphStrong */
+.hl .gr { color: #FF4689 } /* Generic.Error */
+.hl .gh { color: #F8F8F2 } /* Generic.Heading */
+.hl .gi { color: #A6E22E } /* Generic.Inserted */
+.hl .go { color: #66D9EF } /* Generic.Output */
+.hl .gp { color: #FF4689; font-weight: bold } /* Generic.Prompt */
+.hl .gs { color: #F8F8F2; font-weight: bold } /* Generic.Strong */
+.hl .gu { color: #959077 } /* Generic.Subheading */
+.hl .gt { color: #66D9EF } /* Generic.Traceback */
+.hl .kc { color: #66D9EF } /* Keyword.Constant */
+.hl .kd { color: #66D9EF } /* Keyword.Declaration */
+.hl .kn { color: #FF4689 } /* Keyword.Namespace */
+.hl .kp { color: #66D9EF } /* Keyword.Pseudo */
+.hl .kr { color: #66D9EF } /* Keyword.Reserved */
+.hl .kt { color: #66D9EF } /* Keyword.Type */
+.hl .ld { color: #E6DB74 } /* Literal.Date */
+.hl .m { color: #AE81FF } /* Literal.Number */
+.hl .s { color: #E6DB74 } /* Literal.String */
+.hl .na { color: #A6E22E } /* Name.Attribute */
+.hl .nb { color: #A6E22E } /* Name.Builtin */
+.hl .nc { color: #A6E22E } /* Name.Class */
+.hl .no { color: #66D9EF } /* Name.Constant */
+.hl .nd { color: #A6E22E } /* Name.Decorator */
+.hl .ni { color: #F8F8F2 } /* Name.Entity */
+.hl .ne { color: #A6E22E } /* Name.Exception */
+.hl .nf { color: #A6E22E } /* Name.Function */
+.hl .nl { color: #F8F8F2 } /* Name.Label */
+.hl .nn { color: #F8F8F2 } /* Name.Namespace */
+.hl .nx { color: #A6E22E } /* Name.Other */
+.hl .py { color: #F8F8F2 } /* Name.Property */
+.hl .nt { color: #FF4689 } /* Name.Tag */
+.hl .nv { color: #F8F8F2 } /* Name.Variable */
+.hl .ow { color: #FF4689 } /* Operator.Word */
+.hl .pm { color: #F8F8F2 } /* Punctuation.Marker */
+.hl .w { color: #F8F8F2 } /* Text.Whitespace */
+.hl .mb { color: #AE81FF } /* Literal.Number.Bin */
+.hl .mf { color: #AE81FF } /* Literal.Number.Float */
+.hl .mh { color: #AE81FF } /* Literal.Number.Hex */
+.hl .mi { color: #AE81FF } /* Literal.Number.Integer */
+.hl .mo { color: #AE81FF } /* Literal.Number.Oct */
+.hl .sa { color: #E6DB74 } /* Literal.String.Affix */
+.hl .sb { color: #E6DB74 } /* Literal.String.Backtick */
+.hl .sc { color: #E6DB74 } /* Literal.String.Char */
+.hl .dl { color: #E6DB74 } /* Literal.String.Delimiter */
+.hl .sd { color: #E6DB74 } /* Literal.String.Doc */
+.hl .s2 { color: #E6DB74 } /* Literal.String.Double */
+.hl .se { color: #AE81FF } /* Literal.String.Escape */
+.hl .sh { color: #E6DB74 } /* Literal.String.Heredoc */
+.hl .si { color: #E6DB74 } /* Literal.String.Interpol */
+.hl .sx { color: #E6DB74 } /* Literal.String.Other */
+.hl .sr { color: #E6DB74 } /* Literal.String.Regex */
+.hl .s1 { color: #E6DB74 } /* Literal.String.Single */
+.hl .ss { color: #E6DB74 } /* Literal.String.Symbol */
+.hl .bp { color: #A6E22E } /* Name.Builtin.Pseudo */
+.hl .fm { color: #A6E22E } /* Name.Function.Magic */
+.hl .vc { color: #F8F8F2 } /* Name.Variable.Class */
+.hl .vg { color: #F8F8F2 } /* Name.Variable.Global */
+.hl .vi { color: #F8F8F2 } /* Name.Variable.Instance */
+.hl .vm { color: #F8F8F2 } /* Name.Variable.Magic */
+.hl .il { color: #AE81FF } /* Literal.Number.Integer.Long */.hl pre{background:#1B2B3A}</style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="../../">問達工作室</a>
+  <nav aria-label="頁面導覽"><a href="../../">首頁</a><a href="../../blog/">文章</a><a href="../../#contact">預約診斷</a></nav>
+</header>
+<main class="wrap">
+<article>
+<h1>搬到雲端主機後，早上八點前的訂單從報表消失：時間欄位的三個坑</h1>
+<div class="meta"><span>2026-11-21</span><span>部署與環境</span></div>
+<p>一套小型訂單系統，原本跑在辦公室的一台 Windows 主機上，這週搬到雲端的 Linux 容器。程式一行都沒改，部署完也測過能下單、能查詢。</p>
+<p>搬完隔天早上，業務反映兩件事：</p>
+<ul>
+<li>「今日訂單」報表少了幾筆，少的剛好都是<strong>早上 8 點以前</strong>下的單。</li>
+<li>後台訂單列表裡，新訂單的時間都<strong>少了 8 小時</strong>；依時間排序時，有些新訂單還排到舊訂單前面。</li>
+</ul>
+<p>以下用示範情境說明（系統、資料、時間都是虛構的）。看到「剛好 8 小時」，第一個要懷疑的就是時區：臺灣是 UTC+8，而很多雲端主機與容器映像檔預設是 UTC。</p>
+<h2>先畫出：一個時間會經過哪些地方</h2>
+<p>一個時間從使用者按下「送出」到出現在報表上，會經過好幾層，每一層都可能用自己的時區解讀它：</p>
+<figure><img src="fig-1.svg" alt="一筆訂單時間經過的地方：標 ①②③ 的是這次出問題的三個點" loading="lazy"><figcaption>一筆訂單時間經過的地方：標 ①②③ 的是這次出問題的三個點</figcaption></figure>
+<p>舊主機的時區是臺灣，每一層剛好都「猜對」，所以從來沒出事。搬到 UTC 的主機以後，三個點同時出問題。</p>
+<h2>坑一：<code>DateTime.Now</code> 跟著主機走</h2>
+<p>寫入訂單時用的是 <code>DateTime.Now</code>。它回傳的是<strong>主機時區</strong>的現在時間，主機換了時區，存進資料庫的數字就跟著變。資料庫的 <code>DATETIME</code>（SQL Server 的 <code>datetime</code>、<code>datetime2</code> 也一樣）只存「年月日時分秒」，不記得這個數字是哪個時區的時間。</p>
+<p>下面這支 .NET 8 主控台程式模擬整個過程。為了讓結果可以重現，「現在」固定成兩個時間點：臺灣時間 11/16 07:30 下單、09:00 看報表。</p>
+<div class="hl"><pre><span></span><code><span class="k">using</span><span class="w"> </span><span class="nn">System.Text.Json</span><span class="p">;</span>
+
+<span class="c1">// 示範：同一段程式放在不同時區的主機上跑，結果不一樣。</span>
+<span class="c1">// 為了讓輸出可以重現，「現在」固定成兩個時間點，再換算成 DateTime.Now 在那一刻會回傳的值。</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">orderUtc</span><span class="w">  </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">DateTime</span><span class="p">(</span><span class="mi">2026</span><span class="p">,</span><span class="w"> </span><span class="mi">11</span><span class="p">,</span><span class="w"> </span><span class="mi">15</span><span class="p">,</span><span class="w"> </span><span class="mi">23</span><span class="p">,</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">DateTimeKind</span><span class="p">.</span><span class="n">Utc</span><span class="p">);</span><span class="w"> </span><span class="c1">// 臺灣時間 11/16 07:30 下單</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">reportUtc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">DateTime</span><span class="p">(</span><span class="mi">2026</span><span class="p">,</span><span class="w"> </span><span class="mi">11</span><span class="p">,</span><span class="w"> </span><span class="mi">16</span><span class="p">,</span><span class="w">  </span><span class="mi">1</span><span class="p">,</span><span class="w">  </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">DateTimeKind</span><span class="p">.</span><span class="n">Utc</span><span class="p">);</span><span class="w"> </span><span class="c1">// 臺灣時間 11/16 09:00 看報表</span>
+
+<span class="n">DateTime</span><span class="w"> </span><span class="nf">NowAt</span><span class="p">(</span><span class="n">DateTime</span><span class="w"> </span><span class="n">utc</span><span class="p">)</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">TimeZoneInfo</span><span class="p">.</span><span class="n">ConvertTimeFromUtc</span><span class="p">(</span><span class="n">utc</span><span class="p">,</span><span class="w"> </span><span class="n">TimeZoneInfo</span><span class="p">.</span><span class="n">Local</span><span class="p">);</span>
+<span class="c1">// 資料庫的 datetime 欄位不存時區，讀回來的 DateTime 通常是 Kind = Unspecified（依資料庫驅動程式而定）</span>
+<span class="n">DateTime</span><span class="w"> </span><span class="nf">FromDb</span><span class="p">(</span><span class="n">DateTime</span><span class="w"> </span><span class="k">value</span><span class="p">)</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">DateTime</span><span class="p">.</span><span class="n">SpecifyKind</span><span class="p">(</span><span class="k">value</span><span class="p">,</span><span class="w"> </span><span class="n">DateTimeKind</span><span class="p">.</span><span class="n">Unspecified</span><span class="p">);</span>
+
+<span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">$"主機時區：{TimeZoneInfo.Local.Id}"</span><span class="p">);</span>
+
+<span class="c1">// ── 原本的寫法：寫入用 DateTime.Now，報表的「今天」用 DateTime.Today ──</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">savedOld</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">FromDb</span><span class="p">(</span><span class="n">NowAt</span><span class="p">(</span><span class="n">orderUtc</span><span class="p">));</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">todayOld</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">NowAt</span><span class="p">(</span><span class="n">reportUtc</span><span class="p">).</span><span class="n">Date</span><span class="p">;</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">inOld</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">savedOld</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="n">todayOld</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">savedOld</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">todayOld</span><span class="p">.</span><span class="n">AddDays</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
+
+<span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">"[原本] 存進資料庫的時間："</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">savedOld</span><span class="p">.</span><span class="n">ToString</span><span class="p">(</span><span class="s">"yyyy-MM-dd HH:mm"</span><span class="p">));</span>
+<span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">"[原本] 報表的今天："</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">todayOld</span><span class="p">.</span><span class="n">ToString</span><span class="p">(</span><span class="s">"yyyy-MM-dd"</span><span class="p">)</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">"，這筆在今天的報表裡："</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="p">(</span><span class="n">inOld</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="s">"是"</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="s">"否"</span><span class="p">));</span>
+<span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">"[原本] API 回傳："</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">JsonSerializer</span><span class="p">.</span><span class="n">Serialize</span><span class="p">(</span><span class="n">savedOld</span><span class="p">));</span>
+
+<span class="c1">// ── 改法：一律存 UTC；「今天」用臺灣時區算出範圍，再換成 UTC 去查 ──</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">tw</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">TimeZoneInfo</span><span class="p">.</span><span class="n">FindSystemTimeZoneById</span><span class="p">(</span><span class="s">"Asia/Taipei"</span><span class="p">);</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">savedNew</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">FromDb</span><span class="p">(</span><span class="n">orderUtc</span><span class="p">);</span><span class="w">                                   </span><span class="c1">// 寫入時用 DateTime.UtcNow</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">twToday</span><span class="w">  </span><span class="o">=</span><span class="w"> </span><span class="n">TimeZoneInfo</span><span class="p">.</span><span class="n">ConvertTimeFromUtc</span><span class="p">(</span><span class="n">reportUtc</span><span class="p">,</span><span class="w"> </span><span class="n">tw</span><span class="p">).</span><span class="n">Date</span><span class="p">;</span><span class="w">  </span><span class="c1">// 臺灣的「今天」</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">fromUtc</span><span class="w">  </span><span class="o">=</span><span class="w"> </span><span class="n">TimeZoneInfo</span><span class="p">.</span><span class="n">ConvertTimeToUtc</span><span class="p">(</span><span class="n">twToday</span><span class="p">,</span><span class="w"> </span><span class="n">tw</span><span class="p">);</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">toUtc</span><span class="w">    </span><span class="o">=</span><span class="w"> </span><span class="n">TimeZoneInfo</span><span class="p">.</span><span class="n">ConvertTimeToUtc</span><span class="p">(</span><span class="n">twToday</span><span class="p">.</span><span class="n">AddDays</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span><span class="w"> </span><span class="n">tw</span><span class="p">);</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">inNew</span><span class="w">    </span><span class="o">=</span><span class="w"> </span><span class="n">savedNew</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="n">fromUtc</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">savedNew</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">toUtc</span><span class="p">;</span>
+
+<span class="c1">// 讀回來時明確標成 UTC，輸出時帶上時區</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">apiValue</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">DateTimeOffset</span><span class="p">(</span><span class="n">DateTime</span><span class="p">.</span><span class="n">SpecifyKind</span><span class="p">(</span><span class="n">savedNew</span><span class="p">,</span><span class="w"> </span><span class="n">DateTimeKind</span><span class="p">.</span><span class="n">Utc</span><span class="p">)).</span><span class="n">ToOffset</span><span class="p">(</span><span class="n">tw</span><span class="p">.</span><span class="n">GetUtcOffset</span><span class="p">(</span><span class="n">savedNew</span><span class="p">));</span>
+
+<span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">"[改後] 存進資料庫的時間（UTC）："</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">savedNew</span><span class="p">.</span><span class="n">ToString</span><span class="p">(</span><span class="s">"yyyy-MM-dd HH:mm"</span><span class="p">));</span>
+<span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">$"[改後] 查詢範圍（UTC）：{fromUtc:yyyy-MM-dd HH:mm} ~ {toUtc:yyyy-MM-dd HH:mm}，這筆在今天的報表裡："</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="p">(</span><span class="n">inNew</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="s">"是"</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="s">"否"</span><span class="p">));</span>
+<span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">"[改後] API 回傳："</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">JsonSerializer</span><span class="p">.</span><span class="n">Serialize</span><span class="p">(</span><span class="n">apiValue</span><span class="p">));</span>
+</code></pre></div>
+
+<p>同一支程式，用 <code>TZ</code> 環境變數模擬兩台主機各跑一次：</p>
+<figure><img src="fig-2.png" alt="實際執行結果：同一支程式，主機時區從臺灣換成 UTC，原本的寫法三個結果都變了，改後的寫法不受影響" loading="lazy"><figcaption>實際執行結果：同一支程式，主機時區從臺灣換成 UTC，原本的寫法三個結果都變了，改後的寫法不受影響</figcaption></figure>
+<p>新主機上，臺灣時間 07:30 下的單，存進去變成 <code>2026-11-15 23:30</code>，看起來像是前一天晚上下的。</p>
+<p>資料庫自己的 <code>NOW()</code>、<code>GETDATE()</code> 也是同一個問題，只是跟著的是<strong>資料庫伺服器</strong>的時區設定（MySQL 還會受每條連線的 <code>time_zone</code> 影響）。兩邊各自取時間、時區又不同，同一張表就會出現兩種時間。</p>
+<h2>坑二：「今天」是從幾點開始算？</h2>
+<p>報表的查詢條件是「<code>created_at</code> 介於今天 00:00 到明天 00:00」，而「今天」用 <code>DateTime.Today</code> 取得。在 UTC 主機上，這個 00:00 是 UTC 的 00:00，也就是<strong>臺灣時間早上 8 點</strong>。</p>
+<p>所以每天臺灣時間 00:00～08:00 之間的訂單，會被算到前一天。這正好對上業務說的「少的都是早上 8 點以前的單」。</p>
+<p>前端也有一樣的陷阱。日期選擇器的值是 <code>2026-11-16</code> 這種只有日期的字串，依 ECMAScript 規範，<code>new Date()</code> 會把它<strong>當成 UTC 午夜</strong>，在臺灣就是早上 8 點（執行結果在下一節）。如果拿它的 <code>toISOString()</code> 當查詢起點，一樣會漏掉早上 8 點以前的資料；這個問題跟主機時區無關，舊主機上可能早就存在。</p>
+<h2>坑三：API 回傳的時間沒有帶時區</h2>
+<p><code>DateTime</code> 從資料庫讀回來通常是 <code>Kind = Unspecified</code>，<code>System.Text.Json</code> 序列化時就不會加上任何時區標記，輸出成 <code>"2026-11-15T23:30:00"</code>（上面的執行結果）。</p>
+<p>前端拿到這個字串，<code>new Date()</code> 依規範會把<strong>有時間、沒時區</strong>的字串當成<strong>瀏覽器所在地的時間</strong>。存的明明是 UTC，前端卻當成臺灣時間顯示，時間就少了 8 小時。</p>
+<p>用 Node.js 22 模擬瀏覽器解析（<code>new Date()</code> 的字串解析規則依 ECMAScript 規範，Node.js 與瀏覽器相同）：</p>
+<div class="hl"><pre><span></span><code><span class="c1">// 同樣的字串，交給 new Date() 解析後，各代表哪一個時間點？</span>
+<span class="kd">const</span><span class="w"> </span><span class="nx">fmt</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="ow">new</span><span class="w"> </span><span class="nb">Intl</span><span class="p">.</span><span class="nx">DateTimeFormat</span><span class="p">(</span><span class="s2">"zh-TW"</span><span class="p">,</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="nx">timeZone</span><span class="o">:</span><span class="w"> </span><span class="s2">"Asia/Taipei"</span><span class="p">,</span><span class="w"> </span><span class="nx">dateStyle</span><span class="o">:</span><span class="w"> </span><span class="s2">"short"</span><span class="p">,</span><span class="w"> </span><span class="nx">timeStyle</span><span class="o">:</span><span class="w"> </span><span class="s2">"short"</span><span class="p">,</span><span class="w"> </span><span class="nx">hourCycle</span><span class="o">:</span><span class="w"> </span><span class="s2">"h23"</span><span class="p">,</span>
+<span class="p">});</span>
+
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s2">"瀏覽器時區："</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nb">Intl</span><span class="p">.</span><span class="nx">DateTimeFormat</span><span class="p">().</span><span class="nx">resolvedOptions</span><span class="p">().</span><span class="nx">timeZone</span><span class="p">);</span>
+<span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kd">const</span><span class="w"> </span><span class="nx">s</span><span class="w"> </span><span class="k">of</span><span class="w"> </span><span class="p">[</span>
+<span class="w">  </span><span class="s2">"2026-11-15T23:30:00"</span><span class="p">,</span><span class="w">        </span><span class="c1">// API 回傳，沒有時區</span>
+<span class="w">  </span><span class="s2">"2026-11-16T07:30:00+08:00"</span><span class="p">,</span><span class="w">  </span><span class="c1">// API 回傳，帶時區</span>
+<span class="w">  </span><span class="s2">"2026-11-16"</span><span class="p">,</span><span class="w">                 </span><span class="c1">// 日期選擇器的值，只有日期</span>
+<span class="p">])</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">d</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="ow">new</span><span class="w"> </span><span class="nb">Date</span><span class="p">(</span><span class="nx">s</span><span class="p">);</span>
+<span class="w">  </span><span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">s</span><span class="p">.</span><span class="nx">padEnd</span><span class="p">(</span><span class="mf">27</span><span class="p">)</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s2">" → UTC "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nx">d</span><span class="p">.</span><span class="nx">toISOString</span><span class="p">()</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s2">"，換成臺灣時間 "</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nx">fmt</span><span class="p">.</span><span class="nx">format</span><span class="p">(</span><span class="nx">d</span><span class="p">));</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<div class="hl"><pre><span></span><code>$ TZ=Asia/Taipei node parse.js
+瀏覽器時區：Asia/Taipei
+2026-11-15T23:30:00         → UTC 2026-11-15T15:30:00.000Z，換成臺灣時間 2026/11/15 23:30
+2026-11-16T07:30:00+08:00   → UTC 2026-11-15T23:30:00.000Z，換成臺灣時間 2026/11/16 07:30
+2026-11-16                  → UTC 2026-11-16T00:00:00.000Z，換成臺灣時間 2026/11/16 08:00
+</code></pre></div>
+
+<p>第一行就是後台列表看到的錯誤時間；第二行帶了 <code>+08:00</code>，在哪個時區解讀都是同一個時間點；第三行就是坑二的「只有日期被當成 UTC 午夜」。</p>
+<p>換成 <code>TZ=America/Los_Angeles</code> 再跑一次，第一行會變成臺灣時間 11/16 15:30。<strong>沒帶時區的時間字串，意思取決於誰來讀它。</strong></p>
+<h2>怎麼改：每一層都講清楚自己用哪個時區</h2>
+<p>改法的原則只有一個：<strong>不要讓任何一層去「繼承」環境的時區</strong>。上面程式的「改後」做了三件事：</p>
+<ol>
+<li><strong>寫入一律用 UTC。</strong> <code>DateTime.UtcNow</code>（或 <code>DateTimeOffset.UtcNow</code>），不用 <code>DateTime.Now</code>；資料庫端也不要混用 <code>NOW()</code> 與程式給的時間。</li>
+<li><strong>「今天」用業務所在地的時區算。</strong> 先算出臺灣的今天，再換成 UTC 範圍去查：<code>2026-11-15 16:00 ~ 2026-11-16 16:00</code>。日期選擇器的值也要用同樣方式換算，不要直接丟給 <code>new Date()</code>。</li>
+<li><strong>API 輸出一定帶時區。</strong> 用 <code>DateTimeOffset</code>，或在讀出時把 <code>Kind</code> 標成 <code>Utc</code>，讓 JSON 帶上 <code>+08:00</code> 或 <code>Z</code>。</li>
+</ol>
+<p>如果系統只在臺灣使用，另一種務實的做法是<strong>全部統一成臺灣時間</strong>：程式主機、資料庫、容器都明確設定成 <code>Asia/Taipei</code>，API 輸出一樣帶 <code>+08:00</code>。這也行得通，重點是每一層都是「明確設定」，而不是剛好預設對了。</p>
+<h2>已經混在一起的舊資料怎麼修</h2>
+<p>最麻煩的是搬家後已經寫進去的資料：同一個欄位裡，搬家前存的是臺灣時間，搬家後存的是 UTC。示範情境裡，搬家發生在 11/15 臺灣時間 22:00，訂單 1001～1003 是搬家前的資料，1004 起是搬家後的資料。</p>
+<p>直覺的修法是「<code>created_at</code> 早於搬家時間的就是舊資料」，但這行不通：</p>
+<figure><img src="fig-3.png" alt="依 MySQL 8.0 實際查詢結果整理（省略秒數）：依 created_at 排序，搬家後的 1004、1005 夾在舊資料中間，用時間切會被誤判成舊資料" loading="lazy"><figcaption>依 MySQL 8.0 實際查詢結果整理（省略秒數）：依 created_at 排序，搬家後的 1004、1005 夾在舊資料中間，用時間切會被誤判成舊資料</figcaption></figure>
+<p>搬家後存的 UTC 值比實際時間小 8 小時，會和搬家前的資料在 8 小時的區間裡重疊，只看數值分不出哪一筆是哪一種。列表排序錯亂也是這個原因。</p>
+<p>可靠的切法是用<strong>不會受時區影響的東西</strong>，例如自動遞增的流水號，或部署紀錄對得上的批次編號。示範資料用流水號切：</p>
+<div class="hl"><pre><span></span><code><span class="c1">-- 用流水號切：只把搬家前的舊資料換成 UTC</span>
+<span class="k">UPDATE</span><span class="w"> </span><span class="n">orders</span><span class="w"> </span><span class="k">SET</span><span class="w"> </span><span class="n">created_at</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">created_at</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="nb">INTERVAL</span><span class="w"> </span><span class="mi">8</span><span class="w"> </span><span class="n">HOUR</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">id</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="mi">1003</span><span class="p">;</span>
+<span class="k">SELECT</span><span class="w"> </span><span class="n">id</span><span class="p">,</span><span class="w"> </span><span class="n">created_at</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">orders</span><span class="w"> </span><span class="k">ORDER</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">created_at</span><span class="p">;</span>
+</code></pre></div>
+
+<div class="hl"><pre><span></span><code>+------+---------------------+
+| id   | created_at          |
++------+---------------------+
+| 1001 | 2026-11-15 02:05:00 |
+| 1002 | 2026-11-15 10:12:00 |
+| 1003 | 2026-11-15 13:40:00 |
+| 1004 | 2026-11-15 14:20:00 |
+| 1005 | 2026-11-15 16:03:00 |
+| 1006 | 2026-11-16 01:30:00 |
++------+---------------------+
+</code></pre></div>
+
+<p>全部換成 UTC 之後，流水號和時間的順序就一致了。實際動手前有幾件事要先確認：</p>
+<ul>
+<li><strong>先備份</strong>，並在複本上跑過一次。</li>
+<li>流水號能當分界，前提是它跟寫入順序一致；如果有補單、匯入或手動指定 id 的資料，要另外挑出來看。</li>
+<li>同一張表裡的其他時間欄位（付款時間、更新時間）、其他資料表的時間欄位，都要一起盤點，不是只有 <code>created_at</code>。</li>
+<li>修資料和改程式要同時上線，否則修完之後又會繼續寫進錯的時間。</li>
+</ul>
+<h2>部署前，先問每一層「現在幾點」</h2>
+<p>最省事的預防方法，是部署前在<strong>新環境</strong>裡，讓每一層各自回報一次現在時間和時區：</p>
+<div class="hl"><pre><span></span><code># Linux 主機：目前時間與時差、系統時區設定、TZ 環境變數（TZ 會蓋過系統設定）
+$ date '+%F %T %z'; cat /etc/timezone; echo "TZ=$TZ"
+2026-11-21 09:08:23 +0800
+Etc/UTC
+TZ=Asia/Taipei
+
+# MySQL：系統時區、全域與連線的 time_zone，以及 NOW() 和 UTC_TIMESTAMP() 是否相同
+$ mysql -uroot -E -e "SELECT @@system_time_zone, @@global.time_zone, @@session.time_zone, NOW(), UTC_TIMESTAMP();"
+*************************** 1. row ***************************
+ @@system_time_zone: UTC
+ @@global.time_zone: SYSTEM
+@@session.time_zone: SYSTEM
+              NOW(): 2026-11-21 01:08:23
+    UTC_TIMESTAMP(): 2026-11-21 01:08:23
+
+# 瀏覽器端（這裡用 Node.js 執行；在瀏覽器的開發者工具主控台也能跑）：臺灣應該是 Asia/Taipei 與 -480
+$ node -e 'console.log(Intl.DateTimeFormat().resolvedOptions().timeZone, new Date().getTimezoneOffset())'
+Asia/Taipei -480
+</code></pre></div>
+
+<p>上面是本文沙盒的實際輸出，剛好示範了一個常見狀況：<strong>系統時區是 UTC，但登入的 shell 設了 <code>TZ=Asia/Taipei</code>，所以 <code>date</code> 顯示臺灣時間；資料庫服務沒有這個環境變數，用的是 UTC。</strong> 同一刻，一個說 09:08、一個說 01:08。只在自己的終端機跑 <code>date</code>，會誤以為整台機器都是臺灣時間。</p>
+<p>.NET 程式可以在啟動時把 <code>TimeZoneInfo.Local.Id</code> 寫進 log；SQL Server 可以查 <code>SELECT SYSDATETIMEOFFSET(), GETDATE(), GETUTCDATE();</code> 看時差（這行沒有實際執行）。</p>
+<blockquote>
+<p>本文的 C# 程式在 Ubuntu 24.04、.NET SDK 8.0.134 實際執行過，用 <code>TZ</code> 環境變數模擬兩台主機；JavaScript 在 Node.js 22 執行；SQL 在 MySQL 8.0.46 執行；文中輸出都與實際輸出相同。SQL Server 查詢沒有實際執行；<code>FindSystemTimeZoneById("Asia/Taipei")</code> 只在 Linux 驗證過，Windows 上的時區 ID 是 <code>Taipei Standard Time</code>，請自行確認。</p>
+</blockquote>
+<h2>學到什麼</h2>
+<ul>
+<li>看到「剛好差 8 小時」或「剛好從早上 8 點開始不對」，先查時區，不用急著翻商業邏輯。</li>
+<li><code>DateTime.Now</code>、<code>NOW()</code>、<code>new Date("2026-11-16")</code> 都會偷偷用某一層的時區。舊主機沒出事，只是剛好設成臺灣時間。</li>
+<li>存 UTC、輸出帶時區、「今天」用業務所在地的時區算；或是全部明確設成同一個時區。兩種都可以，不能靠預設值。</li>
+<li>已經混在一起的資料不能用時間值切，要用流水號這類不受時區影響的欄位，並且先備份。</li>
+</ul>
+<p>如果你的系統搬家後出現時間對不上、報表少資料的狀況，問達工作室可以幫你逐層查出是哪裡換了時區，連同已經寫錯的資料一起修好。</p>
+<div class="post-end note">問達工作室｜系統救火與自動化・<a href="../../">服務說明</a>・<a href="../../blog/">更多文章</a></div>
+</article>
+</main>
+<footer class="wrap">© 2026 問達工作室・<a href="../../blog/feed.xml">RSS</a></footer>
+</body>
+</html>
