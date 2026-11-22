@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>分店寄來的 CSV 一匯入就出事：亂碼、日期錯位、手機少了 0，自動匯入前先擋這三關｜問達工作室</title>
+<meta name="description" content="同一支匯入程式，有的檔案匯進去是亂碼，有的生日從 4 月 3 日變成 3 月 4 日，手機前面的 0 不見了。這篇用一個示範情境拆解編碼、日期格式、前導零三個坑，附上實際執行過的 C# 匯入前檢查程式：修得回來的自動補正並留紀錄，修不回來的整份退回。">
+<meta property="og:title" content="分店寄來的 CSV 一匯入就出事：亂碼、日期錯位、手機少了 0，自動匯入前先擋這三關｜問達工作室">
+<meta property="og:description" content="同一支匯入程式，有的檔案匯進去是亂碼，有的生日從 4 月 3 日變成 3 月 4 日，手機前面的 0 不見了。這篇用一個示範情境拆解編碼、日期格式、前導零三個坑，附上實際執行過的 C# 匯入前檢查程式：修得回來的自動補正並留紀錄，修不回來的整份退回。">
+<meta property="og:type" content="article">
+<meta name="color-scheme" content="light dark">
+<script>(function(){var t=null;try{t=localStorage.getItem("theme")}catch(e){}if(t!=="light"&&t!=="dark"){t=window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}document.documentElement.setAttribute("data-theme",t)})();</script>
+<meta property="og:image" content="https://hn83320589.github.io/wenda-studio/blog/csv-import-encoding-date/fig-1.png">
+<link rel="alternate" type="application/rss+xml" title="問達工作室文章" href="../../blog/feed.xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<style>
+:root{color-scheme:light;--mist:#FFFFFF;--pane:#DCEAE7;--edge:#2F7F78;--ink:#1B2B3A;--mute:#5A6B75;--amber:#C9861F;--white:#FFFFFF;
+--edge-rgb:47 127 120;--pane-rgb:220 234 231;--amber-rgb:201 134 31;
+--hand:"LXGW WenKai TC","Kaiti TC","BiauKai",serif;--sans:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+--mono:"JetBrains Mono","SFMono-Regular",Consolas,monospace}
+:root[data-theme="dark"]{color-scheme:dark;--mist:#0F171D;--pane:#1A2832;--edge:#6CC0B5;--ink:#E4ECEE;--mute:#9DAEB6;--amber:#E2A84E;--white:#15212A;
+--edge-rgb:108 192 181;--pane-rgb:40 62 74;--amber-rgb:226 168 78}
+*{box-sizing:border-box}
+body{margin:0;background:var(--mist);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.85;-webkit-font-smoothing:antialiased}
+a{color:var(--edge);text-underline-offset:3px}
+:focus-visible{outline:3px solid var(--amber);outline-offset:3px}
+.wrap{width:min(760px,100% - 40px);margin-inline:auto}
+.top{display:flex;justify-content:space-between;align-items:center;padding:22px 0;width:min(1080px,100% - 40px);margin-inline:auto}
+.brand{font-family:var(--hand);font-weight:700;font-size:1.2rem;color:var(--ink);text-decoration:none}
+.top nav a{margin-left:20px;color:var(--ink);text-decoration:none;font-size:.95rem}
+.top nav a:hover{color:var(--edge)}
+h1{font-family:var(--hand);font-size:clamp(1.9rem,4vw,2.6rem);line-height:1.3;margin:24px 0 10px}
+h2{font-family:var(--hand);font-size:1.55rem;line-height:1.4;margin:48px 0 12px}
+h3{font-size:1.12rem;margin:32px 0 8px}
+.meta{color:var(--mute);font-size:.92rem;margin-bottom:36px}
+.meta span+span::before{content:"／";margin:0 6px;color:rgb(var(--edge-rgb) / .5)}
+article p,article li{max-width:40em}
+article img{max-width:100%;height:auto}
+figure{margin:32px 0;text-align:center}
+figure img{background:#FFFFFF;border:1px solid rgb(var(--edge-rgb) / .3);border-radius:8px;padding:12px}
+figcaption{color:var(--mute);font-size:.9rem;margin-top:8px}
+code{font-family:var(--mono);font-size:.88em;background:rgb(var(--pane-rgb) / .8);padding:1px 5px;border-radius:4px}
+pre{background:#1B2B3A;border:1px solid rgb(var(--edge-rgb) / .2);color:#E6EEF0;padding:18px 20px;border-radius:8px;overflow-x:auto;line-height:1.6;font-size:.88rem}
+pre code{background:none;padding:0;color:inherit;font-size:inherit}
+blockquote{margin:24px 0;padding:4px 20px;border-left:3px solid var(--amber);background:rgb(var(--amber-rgb) / .08);color:var(--ink)}
+table{border-collapse:collapse;width:100%;margin:24px 0;font-size:.95rem;background:var(--white)}
+th,td{border:1px solid rgb(var(--edge-rgb) / .3);padding:8px 12px;text-align:left;vertical-align:top}
+th{background:var(--pane)}
+.note{color:var(--mute);font-size:.9rem}
+.post-end{margin:56px 0 24px;padding-top:24px;border-top:1px dashed rgb(var(--edge-rgb) / .45)}
+.list{list-style:none;padding:0;margin:0}
+.list li{padding:22px 0;border-bottom:1px solid rgb(var(--edge-rgb) / .22)}
+.list a.t{font-size:1.15rem;font-weight:700;color:var(--ink);text-decoration:none}
+.list a.t:hover{color:var(--edge)}
+.list .d{color:var(--mute);font-size:.88rem;display:block;margin-bottom:4px}
+.list p{margin:6px 0 0;color:var(--mute)}
+footer{padding:40px 0 56px;color:var(--mute);font-size:.88rem}
+.top-right{display:flex;align-items:center}
+.theme-toggle{display:inline-grid;place-items:center;width:36px;height:36px;margin-left:16px;border:1px solid rgb(var(--edge-rgb) / .35);border-radius:50%;background:transparent;color:var(--ink);cursor:pointer}
+.theme-toggle:hover{border-color:var(--edge);color:var(--edge)}
+.theme-toggle svg{width:17px;height:17px}.theme-toggle .moon{display:none}
+:root[data-theme="dark"] .theme-toggle .sun{display:none}:root[data-theme="dark"] .theme-toggle .moon{display:block}
+@media (prefers-reduced-motion:no-preference){body{transition:background-color .25s ease,color .25s ease}}
+@media (max-width:600px){body{font-size:16px}.top nav a{margin-left:12px}.theme-toggle{margin-left:12px}}
+pre { line-height: 125%; }
+td.linenos .normal { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }
+span.linenos { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }
+td.linenos .special { color: #000000; background-color: #ffffc0; padding-left: 5px; padding-right: 5px; }
+span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 5px; padding-right: 5px; }
+.hl .hll { background-color: #49483e }
+.hl { background: #272822; color: #F8F8F2 }
+.hl .c { color: #959077 } /* Comment */
+.hl .err { color: #ED007E; background-color: #1E0010 } /* Error */
+.hl .esc { color: #F8F8F2 } /* Escape */
+.hl .g { color: #F8F8F2 } /* Generic */
+.hl .k { color: #66D9EF } /* Keyword */
+.hl .l { color: #AE81FF } /* Literal */
+.hl .n { color: #F8F8F2 } /* Name */
+.hl .o { color: #FF4689 } /* Operator */
+.hl .x { color: #F8F8F2 } /* Other */
+.hl .p { color: #F8F8F2 } /* Punctuation */
+.hl .ch { color: #959077 } /* Comment.Hashbang */
+.hl .cm { color: #959077 } /* Comment.Multiline */
+.hl .cp { color: #959077 } /* Comment.Preproc */
+.hl .cpf { color: #959077 } /* Comment.PreprocFile */
+.hl .c1 { color: #959077 } /* Comment.Single */
+.hl .cs { color: #959077 } /* Comment.Special */
+.hl .gd { color: #FF4689 } /* Generic.Deleted */
+.hl .ge { color: #F8F8F2; font-style: italic } /* Generic.Emph */
+.hl .ges { color: #F8F8F2; font-weight: bold; font-style: italic } /* Generic.EmphStrong */
+.hl .gr { color: #FF4689 } /* Generic.Error */
+.hl .gh { color: #F8F8F2 } /* Generic.Heading */
+.hl .gi { color: #A6E22E } /* Generic.Inserted */
+.hl .go { color: #66D9EF } /* Generic.Output */
+.hl .gp { color: #FF4689; font-weight: bold } /* Generic.Prompt */
+.hl .gs { color: #F8F8F2; font-weight: bold } /* Generic.Strong */
+.hl .gu { color: #959077 } /* Generic.Subheading */
+.hl .gt { color: #66D9EF } /* Generic.Traceback */
+.hl .kc { color: #66D9EF } /* Keyword.Constant */
+.hl .kd { color: #66D9EF } /* Keyword.Declaration */
+.hl .kn { color: #FF4689 } /* Keyword.Namespace */
+.hl .kp { color: #66D9EF } /* Keyword.Pseudo */
+.hl .kr { color: #66D9EF } /* Keyword.Reserved */
+.hl .kt { color: #66D9EF } /* Keyword.Type */
+.hl .ld { color: #E6DB74 } /* Literal.Date */
+.hl .m { color: #AE81FF } /* Literal.Number */
+.hl .s { color: #E6DB74 } /* Literal.String */
+.hl .na { color: #A6E22E } /* Name.Attribute */
+.hl .nb { color: #A6E22E } /* Name.Builtin */
+.hl .nc { color: #A6E22E } /* Name.Class */
+.hl .no { color: #66D9EF } /* Name.Constant */
+.hl .nd { color: #A6E22E } /* Name.Decorator */
+.hl .ni { color: #F8F8F2 } /* Name.Entity */
+.hl .ne { color: #A6E22E } /* Name.Exception */
+.hl .nf { color: #A6E22E } /* Name.Function */
+.hl .nl { color: #F8F8F2 } /* Name.Label */
+.hl .nn { color: #F8F8F2 } /* Name.Namespace */
+.hl .nx { color: #A6E22E } /* Name.Other */
+.hl .py { color: #F8F8F2 } /* Name.Property */
+.hl .nt { color: #FF4689 } /* Name.Tag */
+.hl .nv { color: #F8F8F2 } /* Name.Variable */
+.hl .ow { color: #FF4689 } /* Operator.Word */
+.hl .pm { color: #F8F8F2 } /* Punctuation.Marker */
+.hl .w { color: #F8F8F2 } /* Text.Whitespace */
+.hl .mb { color: #AE81FF } /* Literal.Number.Bin */
+.hl .mf { color: #AE81FF } /* Literal.Number.Float */
+.hl .mh { color: #AE81FF } /* Literal.Number.Hex */
+.hl .mi { color: #AE81FF } /* Literal.Number.Integer */
+.hl .mo { color: #AE81FF } /* Literal.Number.Oct */
+.hl .sa { color: #E6DB74 } /* Literal.String.Affix */
+.hl .sb { color: #E6DB74 } /* Literal.String.Backtick */
+.hl .sc { color: #E6DB74 } /* Literal.String.Char */
+.hl .dl { color: #E6DB74 } /* Literal.String.Delimiter */
+.hl .sd { color: #E6DB74 } /* Literal.String.Doc */
+.hl .s2 { color: #E6DB74 } /* Literal.String.Double */
+.hl .se { color: #AE81FF } /* Literal.String.Escape */
+.hl .sh { color: #E6DB74 } /* Literal.String.Heredoc */
+.hl .si { color: #E6DB74 } /* Literal.String.Interpol */
+.hl .sx { color: #E6DB74 } /* Literal.String.Other */
+.hl .sr { color: #E6DB74 } /* Literal.String.Regex */
+.hl .s1 { color: #E6DB74 } /* Literal.String.Single */
+.hl .ss { color: #E6DB74 } /* Literal.String.Symbol */
+.hl .bp { color: #A6E22E } /* Name.Builtin.Pseudo */
+.hl .fm { color: #A6E22E } /* Name.Function.Magic */
+.hl .vc { color: #F8F8F2 } /* Name.Variable.Class */
+.hl .vg { color: #F8F8F2 } /* Name.Variable.Global */
+.hl .vi { color: #F8F8F2 } /* Name.Variable.Instance */
+.hl .vm { color: #F8F8F2 } /* Name.Variable.Magic */
+.hl .il { color: #AE81FF } /* Literal.Number.Integer.Long */.hl pre{background:#1B2B3A}</style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="../../">問達工作室</a>
+  <div class="top-right"><nav aria-label="頁面導覽"><a href="../../">首頁</a><a href="../../blog/">文章</a><a href="../../#contact">預約診斷</a></nav>
+  <button type="button" class="theme-toggle" aria-label="切換深色模式" aria-pressed="false"><svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"/></svg><svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg></button></div>
+</header>
+<main class="wrap">
+<article>
+<h1>分店寄來的 CSV 一匯入就出事：亂碼、日期錯位、手機少了 0，自動匯入前先擋這三關</h1>
+<div class="meta"><span>2026-11-22</span><span>自動化</span></div>
+<p>一家有三間分店的小公司，每個月月初，各分店會把當月新會員整理成 CSV 寄到總公司，行政再用一支小程式匯入會員系統。這支程式跑了一陣子都沒事，最近打算改成「收到信就自動匯入」，省掉人工。</p>
+<p>改之前先拿上個月的檔案試跑，結果三種狀況一次出現：</p>
+<ul>
+<li>A 分店的檔案匯進去，姓名欄全是 <code>���j��</code> 這種亂碼。</li>
+<li>B 分店有位會員的生日，系統顯示 3 月 4 日，本人說是 4 月 3 日；另一位的生日欄是一個五位數 <code>32198</code>。</li>
+<li>B 分店有幾筆手機號碼只剩 9 碼，前面的 0 不見了；有一筆會員編號變成 <code>2.02611E+11</code>。</li>
+</ul>
+<p>以下的公司、分店、會員姓名、號碼與日期都是虛構的示範情境。</p>
+<p>這三個狀況看起來各不相干，其實是同一件事：<strong>CSV 只是一串文字，裡面沒有記錄「這是什麼編碼」「這欄是日期還是文字」</strong>，每個經手的程式都在用自己的方式猜。人工匯入時，行政看到怪怪的資料會停下來問；改成自動匯入以後，沒有人在看，猜錯的資料就直接進資料庫了。</p>
+<h2>先畫出：一份 CSV 從分店到資料庫，經過誰的手</h2>
+<figure><img src="fig-1.svg" alt="一份會員名單經過的地方：標 ①②③ 的是這次出問題的三個點" loading="lazy"><figcaption>一份會員名單經過的地方：標 ①②③ 的是這次出問題的三個點</figcaption></figure>
+<p>匯入程式本身沒有 bug，它只是<strong>相信檔案長得跟預期一樣</strong>。下面一個一個拆。</p>
+<h2>坑一：亂碼，而且欄位跟著錯位</h2>
+<p>中文 CSV 最常見的兩種編碼是 Big5（Windows 上的代碼頁 950，簡稱 cp950）和 UTF-8。同樣是「陳大文」，兩種編碼存下來的位元組完全不同；用錯的編碼去讀，就是亂碼。</p>
+<p>下面這支 .NET 8 主控台程式把同一行文字分別存成兩種編碼，再故意用錯的編碼讀回來：</p>
+<div class="hl"><pre><span></span><code><span class="k">using</span><span class="w"> </span><span class="nn">System.Text</span><span class="p">;</span>
+
+<span class="c1">// .NET（Core）預設只認得 UTF-8 等少數編碼，要先註冊才能用 Big5（cp950）</span>
+<span class="n">Encoding</span><span class="p">.</span><span class="n">RegisterProvider</span><span class="p">(</span><span class="n">CodePagesEncodingProvider</span><span class="p">.</span><span class="n">Instance</span><span class="p">);</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">big5</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Encoding</span><span class="p">.</span><span class="n">GetEncoding</span><span class="p">(</span><span class="mi">950</span><span class="p">);</span>
+
+<span class="kt">var</span><span class="w"> </span><span class="n">text</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"陳大文,0912345678"</span><span class="p">;</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">utf8Bytes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Encoding</span><span class="p">.</span><span class="n">UTF8</span><span class="p">.</span><span class="n">GetBytes</span><span class="p">(</span><span class="n">text</span><span class="p">);</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">big5Bytes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">big5</span><span class="p">.</span><span class="n">GetBytes</span><span class="p">(</span><span class="n">text</span><span class="p">);</span>
+
+<span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">$"原文：{text}"</span><span class="p">);</span>
+<span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">$"存成 UTF-8：{Convert.ToHexString(utf8Bytes)}（{utf8Bytes.Length} bytes）"</span><span class="p">);</span>
+<span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">$"存成 Big5 ：{Convert.ToHexString(big5Bytes)}（{big5Bytes.Length} bytes）"</span><span class="p">);</span>
+<span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">$"UTF-8 檔案用 Big5 讀：{big5.GetString(utf8Bytes)}"</span><span class="p">);</span>
+<span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">$"Big5 檔案用 UTF-8 讀：{Encoding.UTF8.GetString(big5Bytes)}"</span><span class="p">);</span>
+</code></pre></div>
+
+<div class="hl"><pre><span></span><code>$ dotnet run
+原文：陳大文,0912345678
+存成 UTF-8：E999B3E5A4A7E696872C30393132333435363738（20 bytes）
+存成 Big5 ：B3AFA46AA4E52C30393132333435363738（17 bytes）
+UTF-8 檔案用 Big5 讀：?喳之??0912345678
+Big5 檔案用 UTF-8 讀：���j��,0912345678
+</code></pre></div>
+
+<p>最後一行是 Big5 檔案被當成 UTF-8 讀，中文變成 <code>�</code>（無法解碼的字元），這就是 A 分店的狀況：檔案是 Big5，匯入程式用 UTF-8 讀。至少逗號還在，欄位沒有亂。</p>
+<p>倒數第二行是反過來的情況，比較可怕：UTF-8 檔案被當成 Big5 讀，<code>文</code> 的最後一個位元組 <code>87</code> 跟後面的逗號 <code>2C</code> 被當成一個雙位元組字（解不出來，顯示成 <code>?</code>），<strong>逗號不見了</strong>。姓名和手機黏在同一欄，後面每一欄都往前錯一格。如果匯入程式預設用 Big5 讀檔，而某間分店換了新系統、改寄 UTF-8 檔，就會遇到這種情況。</p>
+<p>所以亂碼不只是「字看不懂」，它可能讓程式把手機號碼存進生日欄。</p>
+<p>那檔案到底是哪一種編碼？有幾個判斷依據：</p>
+<ul>
+<li><strong>開頭有 BOM</strong>（<code>EF BB BF</code> 三個位元組）：幾乎可以確定是 UTF-8。Excel 用「CSV UTF-8（逗號分隔）」存檔時會加上 BOM。</li>
+<li><strong>沒有 BOM</strong>：先用「嚴格模式」的 UTF-8 解碼，遇到不合法的位元組就丟出例外而不是換成 <code>�</code>。中文的 Big5 文字幾乎不可能剛好是合法的 UTF-8，所以嚴格解碼成功，就當作 UTF-8。</li>
+<li><strong>嚴格 UTF-8 失敗</strong>：再用嚴格模式的 Big5 試；也失敗就不要猜了，退回給提供檔案的人。</li>
+</ul>
+<p>順序很重要：反過來先試 Big5，很多 UTF-8 檔案也能「成功」解成 Big5，只是解出來是亂碼，程式不會報錯。</p>
+<p>另外，<strong>沒有 BOM 的 UTF-8 CSV 用 Excel 直接點兩下打開</strong>，在繁體中文 Windows 上常會被當成 Big5，畫面上就是亂碼；如果分店人員接著按下存檔，亂碼就真的寫進檔案了。</p>
+<h2>坑二：3 月 4 日還是 4 月 3 日？</h2>
+<p>B 分店的生日欄長這樣：<code>03/04/1988</code>、<code>25/12/1990</code>。很多匯入程式會直接用 <code>DateTime.Parse</code>，問題是它看的是「目前的文化設定」（<code>CultureInfo.CurrentCulture</code>），而這個設定跟著主機、使用者帳號走：</p>
+<div class="hl"><pre><span></span><code><span class="k">using</span><span class="w"> </span><span class="nn">System.Globalization</span><span class="p">;</span>
+
+<span class="c1">// 同一個字串，交給 DateTime.Parse，結果取決於「目前的文化設定」</span>
+<span class="k">foreach</span><span class="w"> </span><span class="p">(</span><span class="kt">var</span><span class="w"> </span><span class="n">s</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="k">new</span><span class="p">[]</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="s">"03/04/1988"</span><span class="p">,</span><span class="w"> </span><span class="s">"25/12/1990"</span><span class="w"> </span><span class="p">})</span>
+<span class="k">foreach</span><span class="w"> </span><span class="p">(</span><span class="kt">var</span><span class="w"> </span><span class="n">name</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="k">new</span><span class="p">[]</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="s">"en-US"</span><span class="p">,</span><span class="w"> </span><span class="s">"en-GB"</span><span class="p">,</span><span class="w"> </span><span class="s">"zh-TW"</span><span class="w"> </span><span class="p">})</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">try</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="kt">var</span><span class="w"> </span><span class="n">d</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DateTime</span><span class="p">.</span><span class="n">Parse</span><span class="p">(</span><span class="n">s</span><span class="p">,</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">CultureInfo</span><span class="p">(</span><span class="n">name</span><span class="p">));</span>
+<span class="w">        </span><span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">$"{s}  {name,-5} → {d:yyyy-MM-dd}"</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">catch</span><span class="w"> </span><span class="p">(</span><span class="n">FormatException</span><span class="p">)</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">$"{s}  {name,-5} → FormatException（解析失敗）"</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+
+<span class="c1">// Excel 儲存格裡的日期其實是數字（1900 日期系統的序號），存成 CSV 時可能直接變成這個數字</span>
+<span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">$"32198 → {DateTime.FromOADate(32198):yyyy-MM-dd}"</span><span class="p">);</span>
+</code></pre></div>
+
+<div class="hl"><pre><span></span><code>$ dotnet run
+03/04/1988  en-US → 1988-03-04
+03/04/1988  en-GB → 1988-04-03
+03/04/1988  zh-TW → 1988-03-04
+25/12/1990  en-US → FormatException（解析失敗）
+25/12/1990  en-GB → 1990-12-25
+25/12/1990  zh-TW → FormatException（解析失敗）
+32198 → 1988-02-25
+</code></pre></div>
+
+<p>同一個 <code>03/04/1988</code>，美式設定解成 3 月 4 日，英式設定解成 4 月 3 日；<code>25/12/1990</code> 在美式和臺灣的設定下直接解析失敗。程式在辦公室電腦上跑得好好的，搬到另一台主機或換個帳號執行，結果就變了，而且<strong>不會有任何錯誤訊息</strong>，只是日月對調。</p>
+<p>更麻煩的是，<code>03/04/1988</code> 這一筆<strong>單看自己是無法判斷的</strong>。要看同一份檔案裡的其他資料：只要有一筆是 <code>25/12/1990</code>，第一段大於 12，就能確定這份檔案是「日/月/年」。所以判斷要以「整份檔案」為單位，不能一筆一筆猜。</p>
+<p>另外兩種常見的日期：</p>
+<ul>
+<li><strong>Excel 日期序號</strong>：Excel 儲存格裡的日期其實是一個數字，從 1900 年起算的天數。儲存格格式被改成「通用格式」或「數值」後再存成 CSV，就會變成 <code>32198</code> 這樣的五位數。.NET 可以用 <code>DateTime.FromOADate</code> 換算（它和 Excel 在 1900 年 3 月以後的日期換算結果相同）。</li>
+<li><strong>民國年</strong>：舊的系統常匯出 <code>077/03/04</code>，年份加 1911 就是西元年。兩位數年份（例如 <code>88/03/04</code>）可能是民國 88 年，也可能是西元 1988 年，這種要先跟提供者確認格式，不要讓程式猜。</li>
+</ul>
+<h2>坑三：手機少了 0，會員編號變成科學記號</h2>
+<p><code>0912345678</code> 在 Excel 眼中是一個數字，數字前面的 0 沒有意義，所以被去掉，變成 <code>912345678</code>。12 位數的會員編號 <code>202611000201</code> 在「通用格式」下會顯示成 <code>2.02611E+11</code>，存成 CSV 時寫進去的就是畫面上這個字串。</p>
+<p>這兩種情況的差別在於<strong>還能不能救</strong>：</p>
+<ul>
+<li>手機少了開頭的 0：臺灣手機號碼是 <code>09</code> 開頭 10 碼，看到 <code>9</code> 開頭 9 碼，補回 0 就是原本的號碼，可以自動補正。</li>
+<li>科學記號：<code>2.02611E+11</code> 只剩 6 位有效數字，原本 12 位數的後半段已經不在檔案裡了，<strong>任何程式都還原不回來</strong>，只能請提供者從原始系統重新匯出。</li>
+</ul>
+<blockquote>
+<p>本文沙盒沒有 Excel，這一節與坑一提到的 Excel 行為（BOM、直接開啟時的編碼判斷、去掉前導 0、科學記號、日期序號）沒有實際重現，是一般常見的情況，會因 Excel 版本與設定而不同，請以自己的版本為準。</p>
+</blockquote>
+<h2>匯入前檢查：修得回來的補正，修不回來的整份退回</h2>
+<p>改成自動匯入之前，先在匯入程式前面加一關「匯入前檢查」。原則有兩條：</p>
+<ol>
+<li><strong>補正要留紀錄。</strong> 手機補 0、民國轉西元、依整份檔案判斷日月，這些可以自動處理，但每一項都寫進匯入紀錄，事後查得到是程式改的。</li>
+<li><strong>只要有一項修不回來，整份不匯入。</strong> 匯一半最難收拾：哪些進去了、哪些沒進去、重匯會不會重複，都要再花時間查。整份退回，請提供者修正後重寄，反而最省事。</li>
+</ol>
+<figure><img src="fig-2.svg" alt="匯入前檢查的流程：先確定編碼，再逐欄檢查，有任何一項退回就整份不匯入" loading="lazy"><figcaption>匯入前檢查的流程：先確定編碼，再逐欄檢查，有任何一項退回就整份不匯入</figcaption></figure>
+<p>下面是示範用的 C# 主控台程式（.NET 8），欄位固定為「會員編號、姓名、手機、生日」：</p>
+<div class="hl"><pre><span></span><code><span class="k">using</span><span class="w"> </span><span class="nn">System.Text</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="nn">System.Text.RegularExpressions</span><span class="p">;</span>
+
+<span class="c1">// 匯入前檢查：先判斷編碼，再逐欄檢查；只要有一筆「退回」，整份檔案就不匯入</span>
+<span class="n">Encoding</span><span class="p">.</span><span class="n">RegisterProvider</span><span class="p">(</span><span class="n">CodePagesEncodingProvider</span><span class="p">.</span><span class="n">Instance</span><span class="p">);</span>
+<span class="k">foreach</span><span class="w"> </span><span class="p">(</span><span class="kt">var</span><span class="w"> </span><span class="n">path</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">args</span><span class="p">)</span><span class="w"> </span><span class="n">Check</span><span class="p">(</span><span class="n">path</span><span class="p">);</span>
+
+<span class="k">static</span><span class="w"> </span><span class="k">void</span><span class="w"> </span><span class="nf">Check</span><span class="p">(</span><span class="kt">string</span><span class="w"> </span><span class="n">path</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">$"== {Path.GetFileName(path)}"</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">var</span><span class="w"> </span><span class="p">(</span><span class="n">text</span><span class="p">,</span><span class="w"> </span><span class="n">encodingNote</span><span class="p">)</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Decode</span><span class="p">(</span><span class="n">File</span><span class="p">.</span><span class="n">ReadAllBytes</span><span class="p">(</span><span class="n">path</span><span class="p">));</span>
+<span class="w">    </span><span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">$"  編碼：{encodingNote}"</span><span class="p">);</span>
+
+<span class="w">    </span><span class="c1">// 示範用的簡單切法；真實檔案若欄位內可能有逗號或引號，要改用能處理引號的 CSV 解析器</span>
+<span class="w">    </span><span class="kt">var</span><span class="w"> </span><span class="n">lines</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">text</span><span class="p">.</span><span class="n">Split</span><span class="p">(</span><span class="sc">'\n'</span><span class="p">).</span><span class="n">Select</span><span class="p">(</span><span class="n">l</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">l</span><span class="p">.</span><span class="n">TrimEnd</span><span class="p">(</span><span class="sc">'\r'</span><span class="p">)).</span><span class="n">Where</span><span class="p">(</span><span class="n">l</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">l</span><span class="p">.</span><span class="n">Length</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="p">).</span><span class="n">ToList</span><span class="p">();</span>
+<span class="w">    </span><span class="kt">var</span><span class="w"> </span><span class="n">header</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">lines</span><span class="p">[</span><span class="mi">0</span><span class="p">].</span><span class="n">Split</span><span class="p">(</span><span class="sc">','</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">iId</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Array</span><span class="p">.</span><span class="n">IndexOf</span><span class="p">(</span><span class="n">header</span><span class="p">,</span><span class="w"> </span><span class="s">"會員編號"</span><span class="p">),</span><span class="w"> </span><span class="n">iPhone</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Array</span><span class="p">.</span><span class="n">IndexOf</span><span class="p">(</span><span class="n">header</span><span class="p">,</span><span class="w"> </span><span class="s">"手機"</span><span class="p">),</span><span class="w"> </span><span class="n">iBirth</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Array</span><span class="p">.</span><span class="n">IndexOf</span><span class="p">(</span><span class="n">header</span><span class="p">,</span><span class="w"> </span><span class="s">"生日"</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">var</span><span class="w"> </span><span class="n">rows</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">lines</span><span class="p">.</span><span class="n">Skip</span><span class="p">(</span><span class="mi">1</span><span class="p">).</span><span class="n">Select</span><span class="p">((</span><span class="n">l</span><span class="p">,</span><span class="w"> </span><span class="n">i</span><span class="p">)</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="p">(</span><span class="n">Line</span><span class="p">:</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="n">Cols</span><span class="p">:</span><span class="w"> </span><span class="n">l</span><span class="p">.</span><span class="n">Split</span><span class="p">(</span><span class="sc">','</span><span class="p">))).</span><span class="n">ToList</span><span class="p">();</span>
+
+<span class="w">    </span><span class="c1">// 「日/月」還是「月/日」不能一筆一筆猜，要看整份檔案</span>
+<span class="w">    </span><span class="kt">var</span><span class="w"> </span><span class="p">(</span><span class="n">order</span><span class="p">,</span><span class="w"> </span><span class="n">orderNote</span><span class="p">)</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DetectOrder</span><span class="p">(</span><span class="n">rows</span><span class="p">.</span><span class="n">Select</span><span class="p">(</span><span class="n">r</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">r</span><span class="p">.</span><span class="n">Cols</span><span class="p">[</span><span class="n">iBirth</span><span class="p">]));</span>
+<span class="w">    </span><span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">$"  「數字/數字/西元年」日期：{orderNote}"</span><span class="p">);</span>
+
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">fixedCount</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">rejected</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<span class="w">    </span><span class="k">foreach</span><span class="w"> </span><span class="p">(</span><span class="kt">var</span><span class="w"> </span><span class="p">(</span><span class="n">line</span><span class="p">,</span><span class="w"> </span><span class="n">c</span><span class="p">)</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">rows</span><span class="p">)</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="k">foreach</span><span class="w"> </span><span class="p">(</span><span class="kt">var</span><span class="w"> </span><span class="p">(</span><span class="n">level</span><span class="p">,</span><span class="w"> </span><span class="n">msg</span><span class="p">)</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">CheckId</span><span class="p">(</span><span class="n">c</span><span class="p">[</span><span class="n">iId</span><span class="p">]).</span><span class="n">Concat</span><span class="p">(</span><span class="n">CheckPhone</span><span class="p">(</span><span class="n">c</span><span class="p">[</span><span class="n">iPhone</span><span class="p">])).</span><span class="n">Concat</span><span class="p">(</span><span class="n">CheckDate</span><span class="p">(</span><span class="n">c</span><span class="p">[</span><span class="n">iBirth</span><span class="p">],</span><span class="w"> </span><span class="n">order</span><span class="p">)))</span>
+<span class="w">        </span><span class="p">{</span>
+<span class="w">            </span><span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">$"  第 {line} 行 [{level}] {msg}"</span><span class="p">);</span>
+<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">level</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="s">"退回"</span><span class="p">)</span><span class="w"> </span><span class="n">rejected</span><span class="o">++</span><span class="p">;</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="n">fixedCount</span><span class="o">++</span><span class="p">;</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">$"  結果：{rows.Count} 筆資料，補正 {fixedCount} 項、退回 {rejected} 項 → "</span>
+<span class="w">        </span><span class="o">+</span><span class="w"> </span><span class="p">(</span><span class="n">rejected</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="s">"整份不匯入，退回給提供者"</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="s">"可以匯入（補正項目寫入匯入紀錄）"</span><span class="p">));</span>
+<span class="p">}</span>
+
+<span class="k">static</span><span class="w"> </span><span class="p">(</span><span class="kt">string</span><span class="w"> </span><span class="n">Text</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="n">Note</span><span class="p">)</span><span class="w"> </span><span class="n">Decode</span><span class="p">(</span><span class="kt">byte</span><span class="p">[]</span><span class="w"> </span><span class="n">b</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">b</span><span class="p">.</span><span class="n">Length</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">b</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mh">0xEF</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">b</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mh">0xBB</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">b</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mh">0xBF</span><span class="p">)</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="p">(</span><span class="n">Encoding</span><span class="p">.</span><span class="n">UTF8</span><span class="p">.</span><span class="n">GetString</span><span class="p">(</span><span class="n">b</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="n">b</span><span class="p">.</span><span class="n">Length</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">3</span><span class="p">),</span><span class="w"> </span><span class="s">"UTF-8（有 BOM）"</span><span class="p">);</span>
+<span class="w">    </span><span class="k">try</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UTF8Encoding</span><span class="p">(</span><span class="k">false</span><span class="p">,</span><span class="w"> </span><span class="n">throwOnInvalidBytes</span><span class="p">:</span><span class="w"> </span><span class="k">true</span><span class="p">).</span><span class="n">GetString</span><span class="p">(</span><span class="n">b</span><span class="p">),</span><span class="w"> </span><span class="s">"UTF-8（沒有 BOM）"</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="k">catch</span><span class="w"> </span><span class="p">(</span><span class="n">DecoderFallbackException</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="k">try</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="kt">var</span><span class="w"> </span><span class="n">big5</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Encoding</span><span class="p">.</span><span class="n">GetEncoding</span><span class="p">(</span><span class="mi">950</span><span class="p">,</span><span class="w"> </span><span class="n">EncoderFallback</span><span class="p">.</span><span class="n">ExceptionFallback</span><span class="p">,</span><span class="w"> </span><span class="n">DecoderFallback</span><span class="p">.</span><span class="n">ExceptionFallback</span><span class="p">);</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="p">(</span><span class="n">big5</span><span class="p">.</span><span class="n">GetString</span><span class="p">(</span><span class="n">b</span><span class="p">),</span><span class="w"> </span><span class="s">"不是合法的 UTF-8，改用 Big5（cp950）讀取成功"</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">catch</span><span class="w"> </span><span class="p">(</span><span class="n">DecoderFallbackException</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">throw</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">InvalidDataException</span><span class="p">(</span><span class="s">"不是 UTF-8 也不是 Big5，請提供者確認存檔方式"</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="p">}</span>
+
+<span class="k">static</span><span class="w"> </span><span class="p">(</span><span class="kt">string?</span><span class="w"> </span><span class="n">Order</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="n">Note</span><span class="p">)</span><span class="w"> </span><span class="n">DetectOrder</span><span class="p">(</span><span class="n">IEnumerable</span><span class="o">&lt;</span><span class="kt">string</span><span class="o">&gt;</span><span class="w"> </span><span class="n">values</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="kt">bool</span><span class="w"> </span><span class="n">any</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">false</span><span class="p">,</span><span class="w"> </span><span class="n">dayFirst</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">false</span><span class="p">,</span><span class="w"> </span><span class="n">monthFirst</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">false</span><span class="p">;</span>
+<span class="w">    </span><span class="k">foreach</span><span class="w"> </span><span class="p">(</span><span class="kt">var</span><span class="w"> </span><span class="n">v</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">values</span><span class="p">)</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="kt">var</span><span class="w"> </span><span class="n">m</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Regex</span><span class="p">.</span><span class="n">Match</span><span class="p">(</span><span class="n">v</span><span class="p">,</span><span class="w"> </span><span class="s">@"^(\d{1,2})/(\d{1,2})/(\d{4})$"</span><span class="p">);</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">m</span><span class="p">.</span><span class="n">Success</span><span class="p">)</span><span class="w"> </span><span class="k">continue</span><span class="p">;</span>
+<span class="w">        </span><span class="n">any</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">true</span><span class="p">;</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="p">.</span><span class="n">Parse</span><span class="p">(</span><span class="n">m</span><span class="p">.</span><span class="n">Groups</span><span class="p">[</span><span class="mi">1</span><span class="p">].</span><span class="n">Value</span><span class="p">)</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">12</span><span class="p">)</span><span class="w"> </span><span class="n">dayFirst</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">true</span><span class="p">;</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="p">.</span><span class="n">Parse</span><span class="p">(</span><span class="n">m</span><span class="p">.</span><span class="n">Groups</span><span class="p">[</span><span class="mi">2</span><span class="p">].</span><span class="n">Value</span><span class="p">)</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">12</span><span class="p">)</span><span class="w"> </span><span class="n">monthFirst</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">true</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="p">(</span><span class="n">any</span><span class="p">,</span><span class="w"> </span><span class="n">dayFirst</span><span class="p">,</span><span class="w"> </span><span class="n">monthFirst</span><span class="p">)</span><span class="w"> </span><span class="k">switch</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="p">(</span><span class="k">false</span><span class="p">,</span><span class="w"> </span><span class="n">_</span><span class="p">,</span><span class="w"> </span><span class="n">_</span><span class="p">)</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="p">(</span><span class="k">null</span><span class="p">,</span><span class="w"> </span><span class="s">"沒有這種格式"</span><span class="p">),</span>
+<span class="w">        </span><span class="p">(</span><span class="n">_</span><span class="p">,</span><span class="w"> </span><span class="k">true</span><span class="p">,</span><span class="w"> </span><span class="k">false</span><span class="p">)</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="p">(</span><span class="s">"日/月/年"</span><span class="p">,</span><span class="w"> </span><span class="s">"日/月/年（有日期的第一段大於 12）"</span><span class="p">),</span>
+<span class="w">        </span><span class="p">(</span><span class="n">_</span><span class="p">,</span><span class="w"> </span><span class="k">false</span><span class="p">,</span><span class="w"> </span><span class="k">true</span><span class="p">)</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="p">(</span><span class="s">"月/日/年"</span><span class="p">,</span><span class="w"> </span><span class="s">"月/日/年（有日期的第二段大於 12）"</span><span class="p">),</span>
+<span class="w">        </span><span class="n">_</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="p">(</span><span class="k">null</span><span class="p">,</span><span class="w"> </span><span class="s">"無法判斷是日/月還是月/日"</span><span class="p">),</span><span class="w">  </span><span class="c1">// 兩種都出現，或全部都 ≤ 12</span>
+<span class="w">    </span><span class="p">};</span>
+<span class="p">}</span>
+
+<span class="k">static</span><span class="w"> </span><span class="n">IEnumerable</span><span class="o">&lt;</span><span class="p">(</span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="o">&gt;</span><span class="w"> </span><span class="n">CheckId</span><span class="p">(</span><span class="kt">string</span><span class="w"> </span><span class="n">v</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">Regex</span><span class="p">.</span><span class="n">IsMatch</span><span class="p">(</span><span class="n">v</span><span class="p">,</span><span class="w"> </span><span class="s">@"^\d{12}$"</span><span class="p">))</span><span class="w"> </span><span class="k">yield</span><span class="w"> </span><span class="k">break</span><span class="p">;</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">v</span><span class="p">.</span><span class="n">Contains</span><span class="p">(</span><span class="s">"E+"</span><span class="p">,</span><span class="w"> </span><span class="n">StringComparison</span><span class="p">.</span><span class="n">OrdinalIgnoreCase</span><span class="p">))</span>
+<span class="w">        </span><span class="k">yield</span><span class="w"> </span><span class="nf">return</span><span class="w"> </span><span class="p">(</span><span class="s">"退回"</span><span class="p">,</span><span class="w"> </span><span class="s">$"會員編號「{v}」是科學記號，原始號碼已經遺失，補不回來"</span><span class="p">);</span>
+<span class="w">    </span><span class="k">else</span>
+<span class="w">        </span><span class="k">yield</span><span class="w"> </span><span class="nf">return</span><span class="w"> </span><span class="p">(</span><span class="s">"退回"</span><span class="p">,</span><span class="w"> </span><span class="s">$"會員編號「{v}」不是 12 碼數字"</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="k">static</span><span class="w"> </span><span class="n">IEnumerable</span><span class="o">&lt;</span><span class="p">(</span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="o">&gt;</span><span class="w"> </span><span class="n">CheckPhone</span><span class="p">(</span><span class="kt">string</span><span class="w"> </span><span class="n">v</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">Regex</span><span class="p">.</span><span class="n">IsMatch</span><span class="p">(</span><span class="n">v</span><span class="p">,</span><span class="w"> </span><span class="s">@"^09\d{8}$"</span><span class="p">))</span><span class="w"> </span><span class="k">yield</span><span class="w"> </span><span class="k">break</span><span class="p">;</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">Regex</span><span class="p">.</span><span class="n">IsMatch</span><span class="p">(</span><span class="n">v</span><span class="p">,</span><span class="w"> </span><span class="s">@"^9\d{8}$"</span><span class="p">))</span>
+<span class="w">        </span><span class="k">yield</span><span class="w"> </span><span class="nf">return</span><span class="w"> </span><span class="p">(</span><span class="s">"補正"</span><span class="p">,</span><span class="w"> </span><span class="s">$"手機「{v}」少了開頭的 0 → 0{v}"</span><span class="p">);</span>
+<span class="w">    </span><span class="k">else</span>
+<span class="w">        </span><span class="k">yield</span><span class="w"> </span><span class="nf">return</span><span class="w"> </span><span class="p">(</span><span class="s">"退回"</span><span class="p">,</span><span class="w"> </span><span class="s">$"手機「{v}」格式不對"</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="k">static</span><span class="w"> </span><span class="n">IEnumerable</span><span class="o">&lt;</span><span class="p">(</span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="o">&gt;</span><span class="w"> </span><span class="n">CheckDate</span><span class="p">(</span><span class="kt">string</span><span class="w"> </span><span class="n">v</span><span class="p">,</span><span class="w"> </span><span class="kt">string?</span><span class="w"> </span><span class="n">order</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">Regex</span><span class="p">.</span><span class="n">IsMatch</span><span class="p">(</span><span class="n">v</span><span class="p">,</span><span class="w"> </span><span class="s">@"^\d{4}[-/]\d{1,2}[-/]\d{1,2}$"</span><span class="p">))</span><span class="w"> </span><span class="k">yield</span><span class="w"> </span><span class="k">break</span><span class="p">;</span><span class="w">  </span><span class="c1">// 年在前，沒有歧義</span>
+
+<span class="w">    </span><span class="n">Match</span><span class="w"> </span><span class="n">m</span><span class="p">;</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">((</span><span class="n">m</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Regex</span><span class="p">.</span><span class="n">Match</span><span class="p">(</span><span class="n">v</span><span class="p">,</span><span class="w"> </span><span class="s">@"^(\d{2,3})/(\d{1,2})/(\d{1,2})$"</span><span class="p">)).</span><span class="n">Success</span><span class="p">)</span><span class="w">      </span><span class="c1">// 民國年</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="kt">var</span><span class="w"> </span><span class="n">d</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ToDate</span><span class="p">(</span><span class="kt">int</span><span class="p">.</span><span class="n">Parse</span><span class="p">(</span><span class="n">m</span><span class="p">.</span><span class="n">Groups</span><span class="p">[</span><span class="mi">1</span><span class="p">].</span><span class="n">Value</span><span class="p">)</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">1911</span><span class="p">,</span><span class="w"> </span><span class="n">m</span><span class="p">.</span><span class="n">Groups</span><span class="p">[</span><span class="mi">2</span><span class="p">].</span><span class="n">Value</span><span class="p">,</span><span class="w"> </span><span class="n">m</span><span class="p">.</span><span class="n">Groups</span><span class="p">[</span><span class="mi">3</span><span class="p">].</span><span class="n">Value</span><span class="p">);</span>
+<span class="w">        </span><span class="k">yield</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">d</span><span class="w"> </span><span class="k">is</span><span class="w"> </span><span class="k">null</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="p">(</span><span class="s">"退回"</span><span class="p">,</span><span class="w"> </span><span class="s">$"生日「{v}」不是有效日期"</span><span class="p">)</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="p">(</span><span class="s">"補正"</span><span class="p">,</span><span class="w"> </span><span class="s">$"生日「{v}」是民國年 → {d}"</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">else</span><span class="w"> </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="n">Regex</span><span class="p">.</span><span class="n">IsMatch</span><span class="p">(</span><span class="n">v</span><span class="p">,</span><span class="w"> </span><span class="s">@"^\d{5}$"</span><span class="p">))</span><span class="w">                                      </span><span class="c1">// Excel 日期序號</span>
+<span class="w">        </span><span class="k">yield</span><span class="w"> </span><span class="nf">return</span><span class="w"> </span><span class="p">(</span><span class="s">"補正"</span><span class="p">,</span><span class="w"> </span><span class="s">$"生日「{v}」像是 Excel 日期序號 → {DateTime.FromOADate(int.Parse(v)):yyyy-MM-dd}，請提供者確認"</span><span class="p">);</span>
+<span class="w">    </span><span class="k">else</span><span class="w"> </span><span class="nf">if</span><span class="w"> </span><span class="p">((</span><span class="n">m</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Regex</span><span class="p">.</span><span class="n">Match</span><span class="p">(</span><span class="n">v</span><span class="p">,</span><span class="w"> </span><span class="s">@"^(\d{1,2})/(\d{1,2})/(\d{4})$"</span><span class="p">)).</span><span class="n">Success</span><span class="p">)</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">order</span><span class="w"> </span><span class="k">is</span><span class="w"> </span><span class="k">null</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">yield</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="p">(</span><span class="s">"退回"</span><span class="p">,</span><span class="w"> </span><span class="s">$"生日「{v}」無法判斷是幾月幾日"</span><span class="p">);</span><span class="w"> </span><span class="k">yield</span><span class="w"> </span><span class="k">break</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">        </span><span class="kt">var</span><span class="w"> </span><span class="p">(</span><span class="n">day</span><span class="p">,</span><span class="w"> </span><span class="n">month</span><span class="p">)</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">order</span><span class="p">.</span><span class="n">StartsWith</span><span class="p">(</span><span class="s">"日"</span><span class="p">)</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="p">(</span><span class="n">m</span><span class="p">.</span><span class="n">Groups</span><span class="p">[</span><span class="mi">1</span><span class="p">].</span><span class="n">Value</span><span class="p">,</span><span class="w"> </span><span class="n">m</span><span class="p">.</span><span class="n">Groups</span><span class="p">[</span><span class="mi">2</span><span class="p">].</span><span class="n">Value</span><span class="p">)</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="p">(</span><span class="n">m</span><span class="p">.</span><span class="n">Groups</span><span class="p">[</span><span class="mi">2</span><span class="p">].</span><span class="n">Value</span><span class="p">,</span><span class="w"> </span><span class="n">m</span><span class="p">.</span><span class="n">Groups</span><span class="p">[</span><span class="mi">1</span><span class="p">].</span><span class="n">Value</span><span class="p">);</span>
+<span class="w">        </span><span class="kt">var</span><span class="w"> </span><span class="n">d</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ToDate</span><span class="p">(</span><span class="kt">int</span><span class="p">.</span><span class="n">Parse</span><span class="p">(</span><span class="n">m</span><span class="p">.</span><span class="n">Groups</span><span class="p">[</span><span class="mi">3</span><span class="p">].</span><span class="n">Value</span><span class="p">),</span><span class="w"> </span><span class="n">month</span><span class="p">,</span><span class="w"> </span><span class="n">day</span><span class="p">);</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">d</span><span class="w"> </span><span class="k">is</span><span class="w"> </span><span class="k">null</span><span class="p">)</span><span class="w"> </span><span class="k">yield</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="p">(</span><span class="s">"退回"</span><span class="p">,</span><span class="w"> </span><span class="s">$"生日「{v}」不是有效日期"</span><span class="p">);</span>
+<span class="w">        </span><span class="k">else</span><span class="w"> </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="p">.</span><span class="n">Parse</span><span class="p">(</span><span class="n">m</span><span class="p">.</span><span class="n">Groups</span><span class="p">[</span><span class="mi">1</span><span class="p">].</span><span class="n">Value</span><span class="p">)</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="mi">12</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="kt">int</span><span class="p">.</span><span class="n">Parse</span><span class="p">(</span><span class="n">m</span><span class="p">.</span><span class="n">Groups</span><span class="p">[</span><span class="mi">2</span><span class="p">].</span><span class="n">Value</span><span class="p">)</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="mi">12</span><span class="p">)</span>
+<span class="w">            </span><span class="k">yield</span><span class="w"> </span><span class="nf">return</span><span class="w"> </span><span class="p">(</span><span class="s">"補正"</span><span class="p">,</span><span class="w"> </span><span class="s">$"生日「{v}」單看這筆無法判斷，依整份檔案視為{order} → {d}"</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">else</span>
+<span class="w">        </span><span class="k">yield</span><span class="w"> </span><span class="nf">return</span><span class="w"> </span><span class="p">(</span><span class="s">"退回"</span><span class="p">,</span><span class="w"> </span><span class="s">$"生日「{v}」格式認不得"</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="k">static</span><span class="w"> </span><span class="kt">string?</span><span class="w"> </span><span class="n">ToDate</span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">y</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="n">m</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="n">d</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">try</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">DateTime</span><span class="p">(</span><span class="n">y</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="p">.</span><span class="n">Parse</span><span class="p">(</span><span class="n">m</span><span class="p">),</span><span class="w"> </span><span class="kt">int</span><span class="p">.</span><span class="n">Parse</span><span class="p">(</span><span class="n">d</span><span class="p">)).</span><span class="n">ToString</span><span class="p">(</span><span class="s">"yyyy-MM-dd"</span><span class="p">);</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="k">catch</span><span class="w"> </span><span class="p">(</span><span class="n">ArgumentOutOfRangeException</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="k">null</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>測試資料是兩份虛構的檔案。A 分店的檔案用 Big5 存檔、生日是民國年，內容如下（這裡顯示的是用 Big5 解碼後的文字）：</p>
+<div class="hl"><pre><span></span><code>會員編號,姓名,手機,生日
+202611000101,陳大文,0912345678,077/03/04
+202611000102,林美華,0922333444,079/12/25
+</code></pre></div>
+
+<p>B 分店的檔案是有 BOM 的 UTF-8，模擬被 Excel 開過再存檔的結果：</p>
+<div class="hl"><pre><span></span><code>會員編號,姓名,手機,生日
+2.02611E+11,張小芬,912000111,03/04/1988
+202611000202,黃志明,0933555666,25/12/1990
+202611000203,吳家豪,955777888,32198
+202611000204,李雅婷,0966123456,14/07/1992
+</code></pre></div>
+
+<p>兩份一起檢查：</p>
+<figure><img src="fig-3.png" alt="實際執行結果：A 分店是 Big5 編碼，補正民國年後可以匯入；B 分店有一筆會員編號已變成科學記號，整份退回" loading="lazy"><figcaption>實際執行結果：A 分店是 Big5 編碼，補正民國年後可以匯入；B 分店有一筆會員編號已變成科學記號，整份退回</figcaption></figure>
+<p>A 分店的亂碼問題，在這裡只是「改用 Big5 讀取」一行說明；B 分店雖然大部分都補正得回來，但第 2 行的會員編號救不回來，所以整份退回。退回時附上這份清單，提供者馬上知道要改哪一行，不用來回問。</p>
+<p>這支程式是示範用的簡化版本，實際使用前還要補上幾件事：</p>
+<ul>
+<li>用能處理引號的 CSV 解析器取代 <code>Split(',')</code>，否則欄位內有逗號（例如地址）就會切錯。</li>
+<li>欄位名稱、號碼規則要依實際資料調整；市話、統一編號、郵遞區號都有各自的前導 0 問題。</li>
+<li>匯入紀錄要存下原始檔案，補正前後的值都要留著。</li>
+</ul>
+<p>能從源頭解決更好：請分店直接從系統匯出、不要經過 Excel 另存；或約定用「CSV UTF-8」格式存檔、日期一律寫成 <code>yyyy-MM-dd</code>。即使約定好了，檢查這一關還是要留著，因為總會有人忘記。</p>
+<blockquote>
+<p>本文的 C# 程式在 Ubuntu 24.04、.NET SDK 8.0.134 實際執行過，文中的輸出都與實際輸出相同；測試用的 CSV 檔由 Python 產生（A 分店以 cp950 編碼寫入，B 分店以 UTF-8 加 BOM 寫入）。<code>DateTime.Parse</code> 的結果依 .NET 在 Linux 上使用的 ICU 文化資料，Windows 上的結果請自行確認。Excel 的相關行為沒有實際重現（見坑三的說明）。</p>
+</blockquote>
+<h2>學到什麼</h2>
+<ul>
+<li>CSV 裡沒有編碼和欄位型別的資訊，每個經手的程式都在猜。改成自動匯入以前，要先把「猜」換成「檢查」。</li>
+<li>編碼的判斷順序是：BOM → 嚴格 UTF-8 → 嚴格 Big5 → 退回。亂碼可能吃掉逗號，讓整欄錯位。</li>
+<li>不要用 <code>DateTime.Parse</code> 解析外部檔案的日期；格式要明確指定，「日/月」或「月/日」要看整份檔案決定。</li>
+<li>手機少了 0 救得回來，科學記號救不回來。分清楚哪些可以補正、哪些只能退回，有一項退回就整份不匯入。</li>
+</ul>
+<p>如果你每個月也在處理別人寄來的檔案，想改成自動匯入又怕資料出錯，問達工作室可以幫你把這一關檢查做進流程裡，並把已經匯錯的資料一起找出來。</p>
+<div class="post-end note">問達工作室｜系統救火與自動化・<a href="../../">服務說明</a>・<a href="../../blog/">更多文章</a></div>
+</article>
+</main>
+<footer class="wrap">© 2026 問達工作室・<a href="../../blog/feed.xml">RSS</a></footer>
+<script>(function(){var b=document.querySelector(".theme-toggle"),r=document.documentElement;function sync(){b.setAttribute("aria-pressed",r.getAttribute("data-theme")==="dark"?"true":"false")}sync();b.addEventListener("click",function(){var n=r.getAttribute("data-theme")==="dark"?"light":"dark";r.setAttribute("data-theme",n);try{localStorage.setItem("theme",n)}catch(e){}sync()})})();</script>
+</body>
+</html>
