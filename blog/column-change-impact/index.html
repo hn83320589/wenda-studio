@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>「只是把電話拆成兩欄」，隔天報表、出貨單、後台存檔一起壞：改欄位前，先列出誰在用它｜問達工作室</title>
+<meta name="description" content="欄位改名的指令一秒就跑完，資料庫也沒有報錯，壞掉的是 view、預存程序、trigger、批次程式和 Excel 報表。這篇用一個示範情境，說明改之前怎麼從資料庫和程式碼兩邊找出誰在用這個欄位，附上實際執行過的 SQL 與 C# 掃描程式，以及不必一次切換的改法。">
+<meta property="og:title" content="「只是把電話拆成兩欄」，隔天報表、出貨單、後台存檔一起壞：改欄位前，先列出誰在用它｜問達工作室">
+<meta property="og:description" content="欄位改名的指令一秒就跑完，資料庫也沒有報錯，壞掉的是 view、預存程序、trigger、批次程式和 Excel 報表。這篇用一個示範情境，說明改之前怎麼從資料庫和程式碼兩邊找出誰在用這個欄位，附上實際執行過的 SQL 與 C# 掃描程式，以及不必一次切換的改法。">
+<meta property="og:type" content="article">
+<meta name="color-scheme" content="light dark">
+<script>(function(){var t=null;try{t=localStorage.getItem("theme")}catch(e){}if(t!=="light"&&t!=="dark"){t=window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}document.documentElement.setAttribute("data-theme",t)})();</script>
+<meta property="og:image" content="https://hn83320589.github.io/wenda-studio/blog/column-change-impact/fig-1.png">
+<link rel="alternate" type="application/rss+xml" title="問達工作室文章" href="../../blog/feed.xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<style>
+:root{color-scheme:light;--mist:#FFFFFF;--pane:#DCEAE7;--edge:#2F7F78;--ink:#1B2B3A;--mute:#5A6B75;--amber:#C9861F;--white:#FFFFFF;
+--edge-rgb:47 127 120;--pane-rgb:220 234 231;--amber-rgb:201 134 31;
+--hand:"LXGW WenKai TC","Kaiti TC","BiauKai",serif;--sans:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+--mono:"JetBrains Mono","SFMono-Regular",Consolas,monospace}
+:root[data-theme="dark"]{color-scheme:dark;--mist:#0F171D;--pane:#1A2832;--edge:#6CC0B5;--ink:#E4ECEE;--mute:#9DAEB6;--amber:#E2A84E;--white:#15212A;
+--edge-rgb:108 192 181;--pane-rgb:40 62 74;--amber-rgb:226 168 78}
+*{box-sizing:border-box}
+body{margin:0;background:var(--mist);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.85;-webkit-font-smoothing:antialiased}
+a{color:var(--edge);text-underline-offset:3px}
+:focus-visible{outline:3px solid var(--amber);outline-offset:3px}
+.wrap{width:min(760px,100% - 40px);margin-inline:auto}
+.top{display:flex;justify-content:space-between;align-items:center;padding:22px 0;width:min(1080px,100% - 40px);margin-inline:auto}
+.brand{font-family:var(--hand);font-weight:700;font-size:1.2rem;color:var(--ink);text-decoration:none}
+.top nav a{margin-left:20px;color:var(--ink);text-decoration:none;font-size:.95rem}
+.top nav a:hover{color:var(--edge)}
+h1{font-family:var(--hand);font-size:clamp(1.9rem,4vw,2.6rem);line-height:1.3;margin:24px 0 10px}
+h2{font-family:var(--hand);font-size:1.55rem;line-height:1.4;margin:48px 0 12px}
+h3{font-size:1.12rem;margin:32px 0 8px}
+.meta{color:var(--mute);font-size:.92rem;margin-bottom:36px}
+.meta span+span::before{content:"／";margin:0 6px;color:rgb(var(--edge-rgb) / .5)}
+article p,article li{max-width:40em}
+article img{max-width:100%;height:auto}
+figure{margin:32px 0;text-align:center}
+figure img{background:#FFFFFF;border:1px solid rgb(var(--edge-rgb) / .3);border-radius:8px;padding:12px}
+figcaption{color:var(--mute);font-size:.9rem;margin-top:8px}
+code{font-family:var(--mono);font-size:.88em;background:rgb(var(--pane-rgb) / .8);padding:1px 5px;border-radius:4px}
+pre{background:#1B2B3A;border:1px solid rgb(var(--edge-rgb) / .2);color:#E6EEF0;padding:18px 20px;border-radius:8px;overflow-x:auto;line-height:1.6;font-size:.88rem}
+pre code{background:none;padding:0;color:inherit;font-size:inherit}
+blockquote{margin:24px 0;padding:4px 20px;border-left:3px solid var(--amber);background:rgb(var(--amber-rgb) / .08);color:var(--ink)}
+table{border-collapse:collapse;width:100%;margin:24px 0;font-size:.95rem;background:var(--white)}
+th,td{border:1px solid rgb(var(--edge-rgb) / .3);padding:8px 12px;text-align:left;vertical-align:top}
+th{background:var(--pane)}
+.note{color:var(--mute);font-size:.9rem}
+.post-end{margin:56px 0 24px;padding-top:24px;border-top:1px dashed rgb(var(--edge-rgb) / .45)}
+.list{list-style:none;padding:0;margin:0}
+.list li{padding:22px 0;border-bottom:1px solid rgb(var(--edge-rgb) / .22)}
+.list a.t{font-size:1.15rem;font-weight:700;color:var(--ink);text-decoration:none}
+.list a.t:hover{color:var(--edge)}
+.list .d{color:var(--mute);font-size:.88rem;display:block;margin-bottom:4px}
+.list p{margin:6px 0 0;color:var(--mute)}
+footer{padding:40px 0 56px;color:var(--mute);font-size:.88rem}
+.top-right{display:flex;align-items:center}
+.theme-toggle{display:inline-grid;place-items:center;width:36px;height:36px;margin-left:16px;border:1px solid rgb(var(--edge-rgb) / .35);border-radius:50%;background:transparent;color:var(--ink);cursor:pointer}
+.theme-toggle:hover{border-color:var(--edge);color:var(--edge)}
+.theme-toggle svg{width:17px;height:17px}.theme-toggle .moon{display:none}
+:root[data-theme="dark"] .theme-toggle .sun{display:none}:root[data-theme="dark"] .theme-toggle .moon{display:block}
+@media (prefers-reduced-motion:no-preference){body{transition:background-color .25s ease,color .25s ease}}
+@media (max-width:600px){body{font-size:16px}.top nav a{margin-left:12px}.theme-toggle{margin-left:12px}}
+pre { line-height: 125%; }
+td.linenos .normal { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }
+span.linenos { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }
+td.linenos .special { color: #000000; background-color: #ffffc0; padding-left: 5px; padding-right: 5px; }
+span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 5px; padding-right: 5px; }
+.hl .hll { background-color: #49483e }
+.hl { background: #272822; color: #F8F8F2 }
+.hl .c { color: #959077 } /* Comment */
+.hl .err { color: #ED007E; background-color: #1E0010 } /* Error */
+.hl .esc { color: #F8F8F2 } /* Escape */
+.hl .g { color: #F8F8F2 } /* Generic */
+.hl .k { color: #66D9EF } /* Keyword */
+.hl .l { color: #AE81FF } /* Literal */
+.hl .n { color: #F8F8F2 } /* Name */
+.hl .o { color: #FF4689 } /* Operator */
+.hl .x { color: #F8F8F2 } /* Other */
+.hl .p { color: #F8F8F2 } /* Punctuation */
+.hl .ch { color: #959077 } /* Comment.Hashbang */
+.hl .cm { color: #959077 } /* Comment.Multiline */
+.hl .cp { color: #959077 } /* Comment.Preproc */
+.hl .cpf { color: #959077 } /* Comment.PreprocFile */
+.hl .c1 { color: #959077 } /* Comment.Single */
+.hl .cs { color: #959077 } /* Comment.Special */
+.hl .gd { color: #FF4689 } /* Generic.Deleted */
+.hl .ge { color: #F8F8F2; font-style: italic } /* Generic.Emph */
+.hl .ges { color: #F8F8F2; font-weight: bold; font-style: italic } /* Generic.EmphStrong */
+.hl .gr { color: #FF4689 } /* Generic.Error */
+.hl .gh { color: #F8F8F2 } /* Generic.Heading */
+.hl .gi { color: #A6E22E } /* Generic.Inserted */
+.hl .go { color: #66D9EF } /* Generic.Output */
+.hl .gp { color: #FF4689; font-weight: bold } /* Generic.Prompt */
+.hl .gs { color: #F8F8F2; font-weight: bold } /* Generic.Strong */
+.hl .gu { color: #959077 } /* Generic.Subheading */
+.hl .gt { color: #66D9EF } /* Generic.Traceback */
+.hl .kc { color: #66D9EF } /* Keyword.Constant */
+.hl .kd { color: #66D9EF } /* Keyword.Declaration */
+.hl .kn { color: #FF4689 } /* Keyword.Namespace */
+.hl .kp { color: #66D9EF } /* Keyword.Pseudo */
+.hl .kr { color: #66D9EF } /* Keyword.Reserved */
+.hl .kt { color: #66D9EF } /* Keyword.Type */
+.hl .ld { color: #E6DB74 } /* Literal.Date */
+.hl .m { color: #AE81FF } /* Literal.Number */
+.hl .s { color: #E6DB74 } /* Literal.String */
+.hl .na { color: #A6E22E } /* Name.Attribute */
+.hl .nb { color: #A6E22E } /* Name.Builtin */
+.hl .nc { color: #A6E22E } /* Name.Class */
+.hl .no { color: #66D9EF } /* Name.Constant */
+.hl .nd { color: #A6E22E } /* Name.Decorator */
+.hl .ni { color: #F8F8F2 } /* Name.Entity */
+.hl .ne { color: #A6E22E } /* Name.Exception */
+.hl .nf { color: #A6E22E } /* Name.Function */
+.hl .nl { color: #F8F8F2 } /* Name.Label */
+.hl .nn { color: #F8F8F2 } /* Name.Namespace */
+.hl .nx { color: #A6E22E } /* Name.Other */
+.hl .py { color: #F8F8F2 } /* Name.Property */
+.hl .nt { color: #FF4689 } /* Name.Tag */
+.hl .nv { color: #F8F8F2 } /* Name.Variable */
+.hl .ow { color: #FF4689 } /* Operator.Word */
+.hl .pm { color: #F8F8F2 } /* Punctuation.Marker */
+.hl .w { color: #F8F8F2 } /* Text.Whitespace */
+.hl .mb { color: #AE81FF } /* Literal.Number.Bin */
+.hl .mf { color: #AE81FF } /* Literal.Number.Float */
+.hl .mh { color: #AE81FF } /* Literal.Number.Hex */
+.hl .mi { color: #AE81FF } /* Literal.Number.Integer */
+.hl .mo { color: #AE81FF } /* Literal.Number.Oct */
+.hl .sa { color: #E6DB74 } /* Literal.String.Affix */
+.hl .sb { color: #E6DB74 } /* Literal.String.Backtick */
+.hl .sc { color: #E6DB74 } /* Literal.String.Char */
+.hl .dl { color: #E6DB74 } /* Literal.String.Delimiter */
+.hl .sd { color: #E6DB74 } /* Literal.String.Doc */
+.hl .s2 { color: #E6DB74 } /* Literal.String.Double */
+.hl .se { color: #AE81FF } /* Literal.String.Escape */
+.hl .sh { color: #E6DB74 } /* Literal.String.Heredoc */
+.hl .si { color: #E6DB74 } /* Literal.String.Interpol */
+.hl .sx { color: #E6DB74 } /* Literal.String.Other */
+.hl .sr { color: #E6DB74 } /* Literal.String.Regex */
+.hl .s1 { color: #E6DB74 } /* Literal.String.Single */
+.hl .ss { color: #E6DB74 } /* Literal.String.Symbol */
+.hl .bp { color: #A6E22E } /* Name.Builtin.Pseudo */
+.hl .fm { color: #A6E22E } /* Name.Function.Magic */
+.hl .vc { color: #F8F8F2 } /* Name.Variable.Class */
+.hl .vg { color: #F8F8F2 } /* Name.Variable.Global */
+.hl .vi { color: #F8F8F2 } /* Name.Variable.Instance */
+.hl .vm { color: #F8F8F2 } /* Name.Variable.Magic */
+.hl .il { color: #AE81FF } /* Literal.Number.Integer.Long */.hl pre{background:#1B2B3A}</style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="../../">問達工作室</a>
+  <div class="top-right"><nav aria-label="頁面導覽"><a href="../../">首頁</a><a href="../../blog/">文章</a><a href="../../#contact">預約診斷</a></nav>
+  <button type="button" class="theme-toggle" aria-label="切換深色模式" aria-pressed="false"><svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"/></svg><svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg></button></div>
+</header>
+<main class="wrap">
+<article>
+<h1>「只是把電話拆成兩欄」，隔天報表、出貨單、後台存檔一起壞：改欄位前，先列出誰在用它</h1>
+<div class="meta"><span>2026-11-23</span><span>接手舊系統</span></div>
+<p>一家做零件批發的小公司，客戶資料表裡只有一個 <code>phone</code> 欄位，手機和市話混著填。出貨簡訊常常發到市話，老闆跟工程師說：「把電話拆成手機、市話兩欄吧，應該很快？」</p>
+<p>工程師週五下午把 <code>phone</code> 改名成 <code>mobile</code>，再新增一個 <code>tel</code> 欄位，後台的客戶編輯頁也一起改好。新增一筆客戶測試，正常，上線。</p>
+<p>接下來的三天：</p>
+<ul>
+<li>週六凌晨，夜間的出貨簡訊批次失敗。週末沒人看，沒人發現。</li>
+<li>週一早上，業務打開 Excel 週報按「重新整理」，跳出錯誤。</li>
+<li>倉庫要印出貨單，按下去是錯誤頁。</li>
+<li>客服幫客戶改地址，按儲存失敗；連改客戶名稱都存不進去。</li>
+</ul>
+<p>老闆問：「不是只改了一個欄位嗎？」</p>
+<p>以下的公司、客戶、系統名稱與時間都是虛構的示範情境；資料庫的行為是在 MariaDB 上實際重現的。</p>
+<h2>一個欄位，不是只屬於一個畫面</h2>
+<p>工程師改的是「後台客戶頁面用到的欄位」，但資料庫裡的欄位是大家共用的。這個 <code>phone</code> 實際上被這些地方讀取：</p>
+<figure><img src="fig-1.svg" alt="customers.phone 的使用者：這次的修改只涵蓋最上面那一個" loading="lazy"><figcaption>customers.phone 的使用者：這次的修改只涵蓋最上面那一個</figcaption></figure>
+<p>系統用得越久，這張圖就長得越大。寫 view 的人、寫批次的人、做 Excel 報表的人，常常不是同一個人，也沒有一份文件記下「誰在用哪個欄位」。接手的人只看得到自己手上那一塊。</p>
+<h2>資料庫不會擋你</h2>
+<p>先在 MariaDB 10.11 建一個示範資料庫：<code>customers</code> 資料表，加上一個 view、一個預存程序、一個「電話被修改時寫紀錄」的 trigger，都用到 <code>phone</code>。然後照工程師的做法改名：</p>
+<div class="hl"><pre><span></span><code>$ mariadb shop_demo -e "ALTER TABLE customers RENAME COLUMN phone TO mobile; ALTER TABLE customers ADD COLUMN tel VARCHAR(20) NULL;"
+$ mariadb shop_demo -e "INSERT INTO customers (id, name, mobile) VALUES (3, '阿志冷氣', '0933111222');"
+</code></pre></div>
+
+<p>兩個指令都成功，沒有任何訊息，也沒有警告。接著試試其他地方（以下只保留錯誤訊息；MariaDB 用戶端出錯時會把指令再印一次，這裡省略）：</p>
+<div class="hl"><pre><span></span><code>$ mariadb shop_demo -e "SELECT * FROM v_weekly_sales;"
+ERROR 1356 (HY000) at line 1: View 'shop_demo.v_weekly_sales' references invalid table(s) or column(s) or function(s) or definer/invoker of view lack rights to use them
+
+$ mariadb shop_demo -e "CALL sp_shipping_label(101);"
+ERROR 1054 (42S22) at line 1: Unknown column 'c.phone' in 'SELECT'
+
+$ mariadb shop_demo -e "UPDATE customers SET name = '大明五金行' WHERE id = 1;"
+ERROR 1054 (42S22) at line 1: Unknown column 'phone' in 'OLD'
+</code></pre></div>
+
+<p>這三個錯誤對應到開頭的三件事：</p>
+<ul>
+<li><strong>Excel 週報</strong>連的是 view。改名當下 view 不會報錯，要等到有人查詢它才失敗。</li>
+<li><strong>出貨單</strong>呼叫的預存程序也一樣，等到被呼叫才失敗。</li>
+<li><strong>後台存檔失敗</strong>最容易誤判。trigger 寫在 <code>UPDATE</code> 上，裡面讀 <code>OLD.phone</code>；欄位不在了，<strong>所有</strong>修改客戶資料的動作都會失敗，不管改的是不是電話。而工程師測的是「新增客戶」，<code>INSERT</code> 不會觸發這個 trigger，所以測試正好避開了它。</li>
+</ul>
+<p>夜間簡訊批次的 SQL 直接寫了 <code>phone</code>，失敗的原因相同。</p>
+<p>SQL Server 的情況類似：用 <code>sp_rename</code> 改欄位名稱時只會顯示一段提醒，說改名可能讓指令碼和預存程序失效，不會阻止你。（這段沒有在 SQL Server 上實測。）</p>
+<h3>會報錯的，反而是好處理的</h3>
+<p>清單上還有一個沒報錯的：會計匯出程式用 <code>SELECT * FROM customers</code>，把第 3 欄當成電話寫進 CSV。改名後欄位順序是 <code>id, name, mobile, tel</code>，第 3 欄剛好還是電話，程式照樣能跑。</p>
+<p>問題在下一步：行政開始把市話從 <code>mobile</code> 搬到 <code>tel</code> 以後，會計拿到的檔案裡，那些客戶的電話會變成空白。沒有錯誤訊息，沒有人被通知，可能要等到會計需要打電話給客戶時才發現。</p>
+<p>欄位改名、刪除會讓程式報錯；欄位的<strong>意義</strong>改變（原本放所有電話，現在只放手機）不會報錯，只會讓資料默默變少或變錯。後者更需要事前找出來。</p>
+<p>這次的止血方式很單純：先把欄位名稱改回 <code>phone</code>，後台程式退回上一版。新加的 <code>tel</code> 欄位留著，沒有人讀它，不影響任何東西。改回之後，view、預存程序與 <code>UPDATE</code> 都恢復正常（同一個示範資料庫上實際驗證過）。</p>
+<p>接下來才是正事：重新改一次，這次先找出所有用到 <code>phone</code> 的地方。</p>
+<h2>改之前，兩邊各找一次</h2>
+<p>相依關係分散在兩個地方：<strong>資料庫裡面</strong>（view、預存程序、函式、trigger），和<strong>資料庫外面</strong>（程式碼、批次、報表檔）。兩邊要分開找。</p>
+<h3>第一邊：資料庫裡的物件</h3>
+<p>MySQL／MariaDB 的 <code>information_schema</code> 裡存有 view、預存程序與 trigger 的定義，可以直接搜尋：</p>
+<div class="hl"><pre><span></span><code><span class="k">SELECT</span><span class="w"> </span><span class="s1">'VIEW'</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">object_type</span><span class="p">,</span><span class="w"> </span><span class="k">TABLE_NAME</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">object_name</span>
+<span class="k">FROM</span><span class="w"> </span><span class="n">information_schema</span><span class="p">.</span><span class="n">VIEWS</span>
+<span class="k">WHERE</span><span class="w"> </span><span class="n">TABLE_SCHEMA</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">'shop_demo'</span><span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="n">VIEW_DEFINITION</span><span class="w"> </span><span class="k">LIKE</span><span class="w"> </span><span class="s1">'%phone%'</span>
+<span class="k">UNION</span><span class="w"> </span><span class="k">ALL</span>
+<span class="k">SELECT</span><span class="w"> </span><span class="n">ROUTINE_TYPE</span><span class="p">,</span><span class="w"> </span><span class="k">ROUTINE_NAME</span>
+<span class="k">FROM</span><span class="w"> </span><span class="n">information_schema</span><span class="p">.</span><span class="n">ROUTINES</span>
+<span class="k">WHERE</span><span class="w"> </span><span class="k">ROUTINE_SCHEMA</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">'shop_demo'</span><span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="n">ROUTINE_DEFINITION</span><span class="w"> </span><span class="k">LIKE</span><span class="w"> </span><span class="s1">'%phone%'</span>
+<span class="k">UNION</span><span class="w"> </span><span class="k">ALL</span>
+<span class="k">SELECT</span><span class="w"> </span><span class="s1">'TRIGGER'</span><span class="p">,</span><span class="w"> </span><span class="k">TRIGGER_NAME</span>
+<span class="k">FROM</span><span class="w"> </span><span class="n">information_schema</span><span class="p">.</span><span class="n">TRIGGERS</span>
+<span class="k">WHERE</span><span class="w"> </span><span class="k">TRIGGER_SCHEMA</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">'shop_demo'</span><span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="n">ACTION_STATEMENT</span><span class="w"> </span><span class="k">LIKE</span><span class="w"> </span><span class="s1">'%phone%'</span><span class="p">;</span>
+</code></pre></div>
+
+<p>在改名之前的示範資料庫上執行：</p>
+<div class="hl"><pre><span></span><code>$ mariadb --table shop_demo &lt; find_refs.sql
++-------------+-------------------------+
+| object_type | object_name             |
++-------------+-------------------------+
+| VIEW        | v_weekly_sales          |
+| PROCEDURE   | sp_shipping_label       |
+| TRIGGER     | trg_customers_phone_log |
++-------------+-------------------------+
+</code></pre></div>
+
+<p>幾個注意事項：</p>
+<ul>
+<li><code>LIKE '%phone%'</code> 會多抓，例如 <code>phone_ext</code> 也會被列出來。盤點時寧可多抓再人工排除，不要漏掉。</li>
+<li>查詢的帳號權限不夠時，定義欄位可能是空的，看起來像「沒有任何相依」。這次是用 root 帳號執行的。</li>
+<li>如果有好幾個資料庫（schema），每個都要查，別的資料庫裡的 view 也可能跨庫讀這張表。</li>
+</ul>
+<p>SQL Server 可以從 <code>sys.sql_modules</code> 找，view、預存程序、函式、trigger 的定義都在裡面。以下這段<strong>沒有實際執行過</strong>（本文環境沒有 SQL Server），使用前請先在測試環境確認：</p>
+<div class="hl"><pre><span></span><code><span class="c1">-- SQL Server 版本：未實際執行</span>
+<span class="k">SELECT</span><span class="w"> </span><span class="n">OBJECT_SCHEMA_NAME</span><span class="p">(</span><span class="n">m</span><span class="p">.</span><span class="n">object_id</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="k">schema_name</span><span class="p">,</span>
+<span class="w">       </span><span class="n">OBJECT_NAME</span><span class="p">(</span><span class="n">m</span><span class="p">.</span><span class="n">object_id</span><span class="p">)</span><span class="w">        </span><span class="k">AS</span><span class="w"> </span><span class="n">object_name</span><span class="p">,</span>
+<span class="w">       </span><span class="n">o</span><span class="p">.</span><span class="n">type_desc</span>
+<span class="k">FROM</span><span class="w"> </span><span class="n">sys</span><span class="p">.</span><span class="n">sql_modules</span><span class="w"> </span><span class="n">m</span>
+<span class="k">JOIN</span><span class="w"> </span><span class="n">sys</span><span class="p">.</span><span class="n">objects</span><span class="w"> </span><span class="n">o</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">o</span><span class="p">.</span><span class="n">object_id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">m</span><span class="p">.</span><span class="n">object_id</span>
+<span class="k">WHERE</span><span class="w"> </span><span class="n">m</span><span class="p">.</span><span class="n">definition</span><span class="w"> </span><span class="k">LIKE</span><span class="w"> </span><span class="s1">'%phone%'</span><span class="p">;</span>
+</code></pre></div>
+
+<h3>第二邊：資料庫外面的程式與報表</h3>
+<p>這一邊要掃的是原始碼、批次程式、報表檔。用編輯器全文搜尋 <code>phone</code> 當然可以，但結果一多就很難判斷哪些是真的相關。下面這支 .NET 8 主控台程式做了幾件全文搜尋做不到的事：</p>
+<ul>
+<li>同一個檔案裡有沒有出現資料表名稱，用來區分「確定相關」和「需要人工確認」（例如供應商資料表也有 <code>phone</code>）。</li>
+<li>除了欄位本身，也搜尋第一邊找到的 view、預存程序名稱。Excel 週報裡寫的是 <code>v_weekly_sales</code>，出貨單程式寫的是 <code>sp_shipping_label</code>，它們沒有直接提到 <code>customers</code>，但一樣會受影響。</li>
+<li>標出 <code>SELECT * FROM customers</code>，因為這種寫法依賴欄位順序或全部欄位，搜尋 <code>phone</code> 找不到。</li>
+<li>打開 <code>.xlsx</code>。xlsx 其實是一個 zip 檔，Excel 的外部資料連線查詢存在裡面的 <code>xl/connections.xml</code>。</li>
+</ul>
+<div class="hl"><pre><span></span><code><span class="k">using</span><span class="w"> </span><span class="nn">System.IO.Compression</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="nn">System.Text.RegularExpressions</span><span class="p">;</span>
+
+<span class="c1">// 用法：dotnet run -- &lt;資料夾&gt; &lt;資料表&gt; &lt;欄位&gt; [相依的 view/預存程序/trigger ...]</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">args</span><span class="p">.</span><span class="n">Length</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">3</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">"用法：dotnet run -- &lt;資料夾&gt; &lt;資料表&gt; &lt;欄位&gt; [相依物件 ...]"</span><span class="p">);</span>
+<span class="w">    </span><span class="k">return</span><span class="p">;</span>
+<span class="p">}</span>
+<span class="kt">var</span><span class="w"> </span><span class="p">(</span><span class="n">root</span><span class="p">,</span><span class="w"> </span><span class="n">table</span><span class="p">,</span><span class="w"> </span><span class="n">column</span><span class="p">)</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span><span class="w"> </span><span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span><span class="w"> </span><span class="n">args</span><span class="p">[</span><span class="mi">2</span><span class="p">]);</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">dependents</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">args</span><span class="p">.</span><span class="n">Skip</span><span class="p">(</span><span class="mi">3</span><span class="p">).</span><span class="n">ToArray</span><span class="p">();</span>
+
+<span class="kt">var</span><span class="w"> </span><span class="n">textExt</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="p">[]</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="s">".cs"</span><span class="p">,</span><span class="w"> </span><span class="s">".php"</span><span class="p">,</span><span class="w"> </span><span class="s">".sql"</span><span class="p">,</span><span class="w"> </span><span class="s">".js"</span><span class="p">,</span><span class="w"> </span><span class="s">".ts"</span><span class="p">,</span><span class="w"> </span><span class="s">".vue"</span><span class="p">,</span><span class="w"> </span><span class="s">".py"</span><span class="p">,</span><span class="w"> </span><span class="s">".bat"</span><span class="p">,</span><span class="w"> </span><span class="s">".ps1"</span><span class="p">,</span><span class="w"> </span><span class="s">".config"</span><span class="p">,</span><span class="w"> </span><span class="s">".json"</span><span class="p">,</span><span class="w"> </span><span class="s">".xml"</span><span class="w"> </span><span class="p">};</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">opt</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RegexOptions</span><span class="p">.</span><span class="n">IgnoreCase</span><span class="p">;</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">columnRe</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Regex</span><span class="p">(</span><span class="s">$@"\b{Regex.Escape(column)}\b"</span><span class="p">,</span><span class="w"> </span><span class="n">opt</span><span class="p">);</span>
+<span class="c1">// 資料表名稱的單數也算，例如 customers 對應 Laravel 的 Customer model</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">tableRe</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Regex</span><span class="p">(</span><span class="s">$@"\b{Regex.Escape(table.TrimEnd('s'))}s?\b"</span><span class="p">,</span><span class="w"> </span><span class="n">opt</span><span class="p">);</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">selectStarRe</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Regex</span><span class="p">(</span><span class="s">$@"SELECT\s+\*\s+FROM\s+{Regex.Escape(table)}\b"</span><span class="p">,</span><span class="w"> </span><span class="n">opt</span><span class="p">);</span>
+
+<span class="kt">var</span><span class="w"> </span><span class="n">hits</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="p">(</span><span class="kt">string</span><span class="w"> </span><span class="n">Kind</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="n">Where</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="n">Line</span><span class="p">)</span><span class="o">&gt;</span><span class="p">();</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">scanned</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+
+<span class="k">foreach</span><span class="w"> </span><span class="p">(</span><span class="kt">var</span><span class="w"> </span><span class="n">path</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">Directory</span><span class="p">.</span><span class="n">EnumerateFiles</span><span class="p">(</span><span class="n">root</span><span class="p">,</span><span class="w"> </span><span class="s">"*"</span><span class="p">,</span><span class="w"> </span><span class="n">SearchOption</span><span class="p">.</span><span class="n">AllDirectories</span><span class="p">).</span><span class="n">Order</span><span class="p">())</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="kt">var</span><span class="w"> </span><span class="n">rel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Path</span><span class="p">.</span><span class="n">GetRelativePath</span><span class="p">(</span><span class="n">root</span><span class="p">,</span><span class="w"> </span><span class="n">path</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">var</span><span class="w"> </span><span class="n">ext</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Path</span><span class="p">.</span><span class="n">GetExtension</span><span class="p">(</span><span class="n">path</span><span class="p">).</span><span class="n">ToLowerInvariant</span><span class="p">();</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">path</span><span class="p">.</span><span class="n">EndsWith</span><span class="p">(</span><span class="s">".blade.php"</span><span class="p">)</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="n">textExt</span><span class="p">.</span><span class="n">Contains</span><span class="p">(</span><span class="n">ext</span><span class="p">))</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="n">scanned</span><span class="o">++</span><span class="p">;</span>
+<span class="w">        </span><span class="n">Check</span><span class="p">(</span><span class="n">rel</span><span class="p">,</span><span class="w"> </span><span class="n">File</span><span class="p">.</span><span class="n">ReadAllLines</span><span class="p">(</span><span class="n">path</span><span class="p">));</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">else</span><span class="w"> </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="n">ext</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="s">".xlsx"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// xlsx 是 zip 檔，外部資料連線的查詢語法存在裡面的 XML</span>
+<span class="w">        </span><span class="n">scanned</span><span class="o">++</span><span class="p">;</span>
+<span class="w">        </span><span class="k">using</span><span class="w"> </span><span class="nn">var</span><span class="w"> </span><span class="n">zip</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ZipFile</span><span class="p">.</span><span class="n">OpenRead</span><span class="p">(</span><span class="n">path</span><span class="p">);</span>
+<span class="w">        </span><span class="k">foreach</span><span class="w"> </span><span class="p">(</span><span class="kt">var</span><span class="w"> </span><span class="n">entry</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">zip</span><span class="p">.</span><span class="n">Entries</span><span class="p">.</span><span class="n">Where</span><span class="p">(</span><span class="n">e</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="n">FullName</span><span class="p">.</span><span class="n">EndsWith</span><span class="p">(</span><span class="s">".xml"</span><span class="p">)))</span>
+<span class="w">        </span><span class="p">{</span>
+<span class="w">            </span><span class="k">using</span><span class="w"> </span><span class="nn">var</span><span class="w"> </span><span class="n">sr</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">StreamReader</span><span class="p">(</span><span class="n">entry</span><span class="p">.</span><span class="n">Open</span><span class="p">());</span>
+<span class="w">            </span><span class="n">Check</span><span class="p">(</span><span class="s">$"{rel} → {entry.FullName}"</span><span class="p">,</span><span class="w"> </span><span class="n">sr</span><span class="p">.</span><span class="n">ReadToEnd</span><span class="p">().</span><span class="n">Split</span><span class="p">(</span><span class="sc">'\n'</span><span class="p">));</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+
+<span class="k">void</span><span class="w"> </span><span class="nf">Check</span><span class="p">(</span><span class="kt">string</span><span class="w"> </span><span class="k">where</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="p">[]</span><span class="w"> </span><span class="n">lines</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="kt">var</span><span class="w"> </span><span class="n">fileMentionsTable</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">lines</span><span class="p">.</span><span class="n">Any</span><span class="p">(</span><span class="n">l</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">tableRe</span><span class="p">.</span><span class="n">IsMatch</span><span class="p">(</span><span class="n">l</span><span class="p">));</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">var</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">lines</span><span class="p">.</span><span class="n">Length</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="kt">var</span><span class="w"> </span><span class="n">line</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">lines</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">Trim</span><span class="p">();</span>
+<span class="w">        </span><span class="kt">var</span><span class="w"> </span><span class="n">dep</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dependents</span><span class="p">.</span><span class="n">FirstOrDefault</span><span class="p">(</span><span class="n">d</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">Regex</span><span class="p">.</span><span class="n">IsMatch</span><span class="p">(</span><span class="n">line</span><span class="p">,</span><span class="w"> </span><span class="s">$@"\b{Regex.Escape(d)}\b"</span><span class="p">,</span><span class="w"> </span><span class="n">opt</span><span class="p">));</span>
+<span class="w">        </span><span class="kt">string?</span><span class="w"> </span><span class="n">kind</span><span class="w"> </span><span class="o">=</span>
+<span class="w">            </span><span class="n">dep</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="k">null</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="s">$"經由 {dep}"</span><span class="w"> </span><span class="p">:</span>
+<span class="w">            </span><span class="n">selectStarRe</span><span class="p">.</span><span class="n">IsMatch</span><span class="p">(</span><span class="n">line</span><span class="p">)</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="s">"SELECT *（依欄位順序或全部欄位）"</span><span class="w"> </span><span class="p">:</span>
+<span class="w">            </span><span class="n">columnRe</span><span class="p">.</span><span class="n">IsMatch</span><span class="p">(</span><span class="n">line</span><span class="p">)</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">fileMentionsTable</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="s">"直接使用"</span><span class="w"> </span><span class="p">:</span>
+<span class="w">            </span><span class="n">columnRe</span><span class="p">.</span><span class="n">IsMatch</span><span class="p">(</span><span class="n">line</span><span class="p">)</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="s">$"需人工確認（檔案裡沒有 {table}）"</span><span class="w"> </span><span class="p">:</span>
+<span class="w">            </span><span class="k">null</span><span class="p">;</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">kind</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="k">null</span><span class="p">)</span><span class="w"> </span><span class="n">hits</span><span class="p">.</span><span class="n">Add</span><span class="p">((</span><span class="n">kind</span><span class="p">,</span><span class="w"> </span><span class="s">$"{where}:{i + 1}"</span><span class="p">,</span><span class="w"> </span><span class="n">line</span><span class="p">));</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+
+<span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">$"找 {table}.{column} 的使用位置，掃描 {scanned} 個檔案"</span><span class="p">);</span>
+<span class="kt">int</span><span class="w"> </span><span class="nf">Rank</span><span class="p">(</span><span class="kt">string</span><span class="w"> </span><span class="n">kind</span><span class="p">)</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">kind</span><span class="p">.</span><span class="n">StartsWith</span><span class="p">(</span><span class="s">"直接"</span><span class="p">)</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="n">kind</span><span class="p">.</span><span class="n">StartsWith</span><span class="p">(</span><span class="s">"經由"</span><span class="p">)</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="n">kind</span><span class="p">.</span><span class="n">StartsWith</span><span class="p">(</span><span class="s">"SELECT"</span><span class="p">)</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">;</span>
+<span class="k">foreach</span><span class="w"> </span><span class="p">(</span><span class="kt">var</span><span class="w"> </span><span class="k">group</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">hits</span><span class="p">.</span><span class="n">GroupBy</span><span class="p">(</span><span class="n">h</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">h</span><span class="p">.</span><span class="n">Kind</span><span class="p">).</span><span class="n">OrderBy</span><span class="p">(</span><span class="n">g</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">Rank</span><span class="p">(</span><span class="n">g</span><span class="p">.</span><span class="n">Key</span><span class="p">)))</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">$"\n[{group.Key}] {group.Count()} 處"</span><span class="p">);</span>
+<span class="w">    </span><span class="k">foreach</span><span class="w"> </span><span class="p">(</span><span class="kt">var</span><span class="w"> </span><span class="n">h</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="k">group</span><span class="p">)</span>
+<span class="w">        </span><span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">$"  {h.Where}\n      {(h.Line.Length &gt; 90 ? h.Line[..90] + "</span><span class="err">…</span><span class="s">" : h.Line)}"</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>拿一個示範用的專案資料夾來掃：裡面有 Laravel 後台的幾個檔案、兩支 C# 批次程式、一個 Excel 週報。參數帶入資料表、欄位，以及第一邊找到的 view 和預存程序名稱：</p>
+<figure><img src="fig-2.png" alt="實際執行結果：直接用到 phone 的 3 處、經由 view 與預存程序的 2 處、SELECT * 的 1 處，另有 1 處要人工確認" loading="lazy"><figcaption>實際執行結果：直接用到 phone 的 3 處、經由 view 與預存程序的 2 處、SELECT * 的 1 處，另有 1 處要人工確認</figcaption></figure>
+<p>逐項看：</p>
+<ul>
+<li><strong>直接使用</strong>的 3 處：簡訊批次、Laravel 的 model、客戶編輯頁。後兩個是這次有改到的，簡訊批次沒有。</li>
+<li><strong>經由 view、預存程序</strong>的 2 處：Excel 週報和出貨單程式。這兩個檔案裡完全沒有 <code>customers</code> 這個字，只搜尋資料表名稱會漏掉。</li>
+<li><strong>SELECT *</strong>：會計匯出。要打開來看它怎麼使用欄位，這次的答案是「依位置取第 3 欄」，正好是會默默出錯的那一種。</li>
+<li><strong>需人工確認</strong>：<code>Supplier.php</code> 是供應商資料表的電話，跟這次無關，排除。</li>
+</ul>
+<p>trigger 沒有出現在掃描結果裡，這是正常的：沒有程式會「呼叫」trigger，它跟著 <code>UPDATE customers</code> 自動執行。所以 trigger 只能從第一邊找，而它影響的範圍是<strong>所有</strong>更新客戶資料的地方。</p>
+<p>這支程式找不到的東西，要另外處理：</p>
+<ul>
+<li>用字串拼出來的 SQL，例如欄位名稱放在設定檔或變數裡組起來。</li>
+<li>用 Power Query 建立的 Excel 查詢：據我所知不是以純文字存放，這支程式應該找不到（這點本文沒有實測）。</li>
+<li><strong>不在你手上的東西</strong>：同事電腦裡自己做的 Excel、直接連資料庫的會計軟體、另一家廠商寫的程式。這部分沒辦法靠掃描，可以從資料庫的帳號清單反推：每個有權限連進來的帳號，都代表一個使用者，一個一個問。</li>
+</ul>
+<h2>怎麼改才不會掛：先加、再搬、最後才刪</h2>
+<p>盤點出清單後，改法也要換。不要一次把 <code>phone</code> 改名，而是讓新舊欄位並存一段時間，等每個使用者都換過去，才把舊的拿掉：</p>
+<figure><img src="fig-3.svg" alt="新舊欄位並存的改法：每一步都可以停下來，也都退得回去" loading="lazy"><figcaption>新舊欄位並存的改法：每一步都可以停下來，也都退得回去</figcaption></figure>
+<p>第 1、2 步在示範資料庫上執行（重新建立，<code>phone</code> 尚未被改名）：</p>
+<div class="hl"><pre><span></span><code><span class="c1">-- 第 1 步：只加新欄位，舊的 phone 不動；新欄位加在最後，不改變既有欄位的順序</span>
+<span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">customers</span>
+<span class="w">  </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">mobile</span><span class="w"> </span><span class="nb">VARCHAR</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">  </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">tel</span><span class="w">    </span><span class="nb">VARCHAR</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span><span class="w"> </span><span class="k">NULL</span><span class="p">;</span>
+
+<span class="c1">-- 第 2 步：把現有資料複製一份到新欄位</span>
+<span class="k">UPDATE</span><span class="w"> </span><span class="n">customers</span><span class="w"> </span><span class="k">SET</span><span class="w"> </span><span class="n">mobile</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">phone</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">phone</span><span class="w"> </span><span class="k">LIKE</span><span class="w"> </span><span class="s1">'09%'</span><span class="p">;</span>
+<span class="k">UPDATE</span><span class="w"> </span><span class="n">customers</span><span class="w"> </span><span class="k">SET</span><span class="w"> </span><span class="n">tel</span><span class="w">    </span><span class="o">=</span><span class="w"> </span><span class="n">phone</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">phone</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">LIKE</span><span class="w"> </span><span class="s1">'09%'</span><span class="p">;</span>
+
+<span class="k">SELECT</span><span class="w"> </span><span class="n">id</span><span class="p">,</span><span class="w"> </span><span class="n">name</span><span class="p">,</span><span class="w"> </span><span class="n">phone</span><span class="p">,</span><span class="w"> </span><span class="n">mobile</span><span class="p">,</span><span class="w"> </span><span class="n">tel</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">customers</span><span class="p">;</span>
+</code></pre></div>
+
+<div class="hl"><pre><span></span><code>$ mariadb shop_demo &lt; expand.sql
+id  name    phone   mobile  tel
+1   大明五金    0912345678  0912345678  NULL
+2   小華水電    02-2345-6789    NULL    02-2345-6789
+</code></pre></div>
+
+<p>舊的使用者完全不受影響，view 和預存程序照常運作：</p>
+<div class="hl"><pre><span></span><code>$ mariadb shop_demo -e "SELECT * FROM v_weekly_sales; CALL sp_shipping_label(101);"
+name    phone   total
+大明五金    0912345678  12800
+小華水電    02-2345-6789    5400
+id  name    phone
+101 大明五金    0912345678
+</code></pre></div>
+
+<p>新欄位加在最後面，是為了保護 <code>SELECT *</code> 依位置取值的會計匯出：前三欄還是 <code>id, name, phone</code>。</p>
+<p>第 3 步照清單一項一項改：簡訊批次改讀 <code>mobile</code>、會計匯出改成明確寫出欄位名稱、view 和預存程序加上新欄位、trigger 改成記錄新欄位的異動、通知業務 Excel 週報要換欄位。每改一項，就實際跑一次那個功能。</p>
+<p>第 4 步的「完整週期」，是指所有週期性的東西都至少跑過一次：每天的批次、每週的報表、每月的月結。只跑過一天就刪舊欄位，月底的報表還是會壞。</p>
+<p>這個改法比較慢，但每一步都退得回去：第 3 步改到一半發現問題，舊欄位還在，退回那一項就好。</p>
+<blockquote>
+<p>本文的 SQL 在 Ubuntu 24.04、MariaDB 10.11.14 實際執行過，C# 掃描程式在 .NET SDK 8.0.134 實際執行過，文中的輸出都與實際輸出相同（錯誤訊息的部分省略了用戶端重複印出的指令）。被掃描的示範專案檔案（PHP、C# 批次程式）只用來被掃描，沒有編譯或執行；示範用的 xlsx 由 Python 產生，裡面只有 <code>xl/connections.xml</code>，不是 Excel 實際存出的檔案。MySQL 8、SQL Server 與 Power Query 的部分沒有實測。</p>
+</blockquote>
+<h2>學到什麼</h2>
+<ul>
+<li>資料庫允許你改欄位名稱，不代表沒有人在用它。view 和預存程序要等到被使用才報錯，trigger 會讓整張表的更新一起失敗。</li>
+<li>測試要測「別人的功能」：這次只測了新增客戶，正好避開唯一會立刻出事的 <code>UPDATE</code>。</li>
+<li>找相依關係分兩邊：資料庫裡查 view、預存程序、trigger 的定義；資料庫外掃程式碼和報表檔，並把第一邊找到的物件名稱一起搜尋。</li>
+<li>報錯的好處理，意義改變卻不報錯的才危險。<code>SELECT *</code> 和依位置取值的程式要特別看。</li>
+<li>改欄位用「先加、再搬、最後才刪」，每一步都能停、都能退。</li>
+</ul>
+<p>如果你手上的系統也是「不知道改了會牽動哪裡」，或是已經改出問題、不確定還有哪些地方跟著壞，問達工作室可以幫你在動手前把相依關係盤點出來，再一項一項修回來。</p>
+<div class="post-end note">問達工作室｜系統救火與自動化・<a href="../../">服務說明</a>・<a href="../../blog/">更多文章</a></div>
+</article>
+</main>
+<footer class="wrap">© 2026 問達工作室・<a href="../../blog/feed.xml">RSS</a></footer>
+<script>(function(){var b=document.querySelector(".theme-toggle"),r=document.documentElement;function sync(){b.setAttribute("aria-pressed",r.getAttribute("data-theme")==="dark"?"true":"false")}sync();b.addEventListener("click",function(){var n=r.getAttribute("data-theme")==="dark"?"light":"dark";r.setAttribute("data-theme",n);try{localStorage.setItem("theme",n)}catch(e){}sync()})})();</script>
+</body>
+</html>
