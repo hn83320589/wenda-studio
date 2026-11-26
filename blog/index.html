@@ -159,6 +159,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 <h1>文章</h1>
 <p class='note'>系統救火、除錯與自動化的實作紀錄。</p>
 <ul class='list'>
+<li><span class="d">2026-11-26・自動化</span><a class="t" href="report-automation-three-questions/">每月花半天整理報表，想寫程式自動化之前：先拿半年的舊檔案回答三個問題</a><p>行政每個月花 4 小時做銷售月報，老闆想寫支程式自動跑。動手之前先問三個問題：時間花在哪、資料來源穩不穩、例外由誰決定。這篇用一個示範情境，附上一支實際執行過的 C# 體檢程式，拿過去六個月的匯出檔，找出欄位改名、漏交的月份，以及程式自己無法決定的那些筆。</p></li>
 <li><span class="d">2026-11-25・維護與預防</span><a class="t" href="backup-restore-drill/">備份每天都顯示成功，要還原時才發現只有一張表：讓程式每天替你還原一次</a><p>備份腳本每天寫「備份成功」，真的要還原時才發現檔案裡只有第一張表。這篇用一個 MySQL／MariaDB 的示範情境，說明 mysqldump 的三個常見坑：管線吃掉錯誤、一個壞掉的 view 讓備份停在一半、預存程序預設不備份，並附一支每天實際還原一次、和正式庫比對的 C# 小程式。</p></li>
 <li><span class="d">2026-11-24・資料庫</span><a class="t" href="explain-before-upgrade/">查詢越來越慢，主機商建議升級方案：先花十分鐘看執行計畫，再決定要不要加硬體</a><p>系統用了幾年開始變慢，第一個念頭常常是升級主機。這篇用一個示範情境，說明怎麼用 slow query log 找出慢的 SQL、用 EXPLAIN 看出它是不是每次都讀整張表，以及三種常見原因：沒有可用的索引、欄位被函式包住、型別不合。附上在 MariaDB 實際執行過的 SQL 與前後對照。</p></li>
 <li><span class="d">2026-11-23・接手舊系統</span><a class="t" href="column-change-impact/">「只是把電話拆成兩欄」，隔天報表、出貨單、後台存檔一起壞：改欄位前，先列出誰在用它</a><p>欄位改名的指令一秒就跑完，資料庫也沒有報錯，壞掉的是 view、預存程序、trigger、批次程式和 Excel 報表。這篇用一個示範情境，說明改之前怎麼從資料庫和程式碼兩邊找出誰在用這個欄位，附上實際執行過的 SQL 與 C# 掃描程式，以及不必一次切換的改法。</p></li>
