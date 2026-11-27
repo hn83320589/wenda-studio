@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>沒有文件的系統，一天內畫出它的樣子：先查設定檔、排程和資料庫，最後才讀程式碼｜問達工作室</title>
+<meta name="description" content="接手一套沒有文件、原作者聯絡不上的系統，第一天不要從程式碼讀起。這篇用一個示範情境，說明怎麼從正式主機上的設定檔、排程和資料庫反推出系統的樣子，附上實際執行過的 C# 掃描程式與 SQL，最後產出一張架構圖和一份待確認清單。">
+<meta property="og:title" content="沒有文件的系統，一天內畫出它的樣子：先查設定檔、排程和資料庫，最後才讀程式碼｜問達工作室">
+<meta property="og:description" content="接手一套沒有文件、原作者聯絡不上的系統，第一天不要從程式碼讀起。這篇用一個示範情境，說明怎麼從正式主機上的設定檔、排程和資料庫反推出系統的樣子，附上實際執行過的 C# 掃描程式與 SQL，最後產出一張架構圖和一份待確認清單。">
+<meta property="og:type" content="article">
+<meta name="color-scheme" content="light dark">
+<script>(function(){var t=null;try{t=localStorage.getItem("theme")}catch(e){}if(t!=="light"&&t!=="dark"){t=window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}document.documentElement.setAttribute("data-theme",t)})();</script>
+<meta property="og:image" content="https://hn83320589.github.io/wenda-studio/blog/legacy-system-map/fig-1.png">
+<link rel="alternate" type="application/rss+xml" title="問達工作室文章" href="../../blog/feed.xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<style>
+:root{color-scheme:light;--mist:#FFFFFF;--pane:#DCEAE7;--edge:#2F7F78;--ink:#1B2B3A;--mute:#5A6B75;--amber:#C9861F;--white:#FFFFFF;
+--edge-rgb:47 127 120;--pane-rgb:220 234 231;--amber-rgb:201 134 31;
+--hand:"LXGW WenKai TC","Kaiti TC","BiauKai",serif;--sans:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+--mono:"JetBrains Mono","SFMono-Regular",Consolas,monospace}
+:root[data-theme="dark"]{color-scheme:dark;--mist:#0F171D;--pane:#1A2832;--edge:#6CC0B5;--ink:#E4ECEE;--mute:#9DAEB6;--amber:#E2A84E;--white:#15212A;
+--edge-rgb:108 192 181;--pane-rgb:40 62 74;--amber-rgb:226 168 78}
+*{box-sizing:border-box}
+body{margin:0;background:var(--mist);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.85;-webkit-font-smoothing:antialiased}
+a{color:var(--edge);text-underline-offset:3px}
+:focus-visible{outline:3px solid var(--amber);outline-offset:3px}
+.wrap{width:min(760px,100% - 40px);margin-inline:auto}
+.top{display:flex;justify-content:space-between;align-items:center;padding:22px 0;width:min(1080px,100% - 40px);margin-inline:auto}
+.brand{font-family:var(--hand);font-weight:700;font-size:1.2rem;color:var(--ink);text-decoration:none}
+.top nav a{margin-left:20px;color:var(--ink);text-decoration:none;font-size:.95rem}
+.top nav a:hover{color:var(--edge)}
+h1{font-family:var(--hand);font-size:clamp(1.9rem,4vw,2.6rem);line-height:1.3;margin:24px 0 10px}
+h2{font-family:var(--hand);font-size:1.55rem;line-height:1.4;margin:48px 0 12px}
+h3{font-size:1.12rem;margin:32px 0 8px}
+.meta{color:var(--mute);font-size:.92rem;margin-bottom:36px}
+.meta span+span::before{content:"／";margin:0 6px;color:rgb(var(--edge-rgb) / .5)}
+article p,article li{max-width:40em}
+article img{max-width:100%;height:auto}
+figure{margin:32px 0;text-align:center}
+figure img{background:#FFFFFF;border:1px solid rgb(var(--edge-rgb) / .3);border-radius:8px;padding:12px}
+figcaption{color:var(--mute);font-size:.9rem;margin-top:8px}
+code{font-family:var(--mono);font-size:.88em;background:rgb(var(--pane-rgb) / .8);padding:1px 5px;border-radius:4px}
+pre{background:#1B2B3A;border:1px solid rgb(var(--edge-rgb) / .2);color:#E6EEF0;padding:18px 20px;border-radius:8px;overflow-x:auto;line-height:1.6;font-size:.88rem}
+pre code{background:none;padding:0;color:inherit;font-size:inherit}
+blockquote{margin:24px 0;padding:4px 20px;border-left:3px solid var(--amber);background:rgb(var(--amber-rgb) / .08);color:var(--ink)}
+table{border-collapse:collapse;width:100%;margin:24px 0;font-size:.95rem;background:var(--white)}
+th,td{border:1px solid rgb(var(--edge-rgb) / .3);padding:8px 12px;text-align:left;vertical-align:top}
+th{background:var(--pane)}
+.note{color:var(--mute);font-size:.9rem}
+.post-end{margin:56px 0 24px;padding-top:24px;border-top:1px dashed rgb(var(--edge-rgb) / .45)}
+.list{list-style:none;padding:0;margin:0}
+.list li{padding:22px 0;border-bottom:1px solid rgb(var(--edge-rgb) / .22)}
+.list a.t{font-size:1.15rem;font-weight:700;color:var(--ink);text-decoration:none}
+.list a.t:hover{color:var(--edge)}
+.list .d{color:var(--mute);font-size:.88rem;display:block;margin-bottom:4px}
+.list p{margin:6px 0 0;color:var(--mute)}
+footer{padding:40px 0 56px;color:var(--mute);font-size:.88rem}
+.top-right{display:flex;align-items:center}
+.theme-toggle{display:inline-grid;place-items:center;width:36px;height:36px;margin-left:16px;border:1px solid rgb(var(--edge-rgb) / .35);border-radius:50%;background:transparent;color:var(--ink);cursor:pointer}
+.theme-toggle:hover{border-color:var(--edge);color:var(--edge)}
+.theme-toggle svg{width:17px;height:17px}.theme-toggle .moon{display:none}
+:root[data-theme="dark"] .theme-toggle .sun{display:none}:root[data-theme="dark"] .theme-toggle .moon{display:block}
+@media (prefers-reduced-motion:no-preference){body{transition:background-color .25s ease,color .25s ease}}
+@media (max-width:600px){body{font-size:16px}.top nav a{margin-left:12px}.theme-toggle{margin-left:12px}}
+pre { line-height: 125%; }
+td.linenos .normal { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }
+span.linenos { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }
+td.linenos .special { color: #000000; background-color: #ffffc0; padding-left: 5px; padding-right: 5px; }
+span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 5px; padding-right: 5px; }
+.hl .hll { background-color: #49483e }
+.hl { background: #272822; color: #F8F8F2 }
+.hl .c { color: #959077 } /* Comment */
+.hl .err { color: #ED007E; background-color: #1E0010 } /* Error */
+.hl .esc { color: #F8F8F2 } /* Escape */
+.hl .g { color: #F8F8F2 } /* Generic */
+.hl .k { color: #66D9EF } /* Keyword */
+.hl .l { color: #AE81FF } /* Literal */
+.hl .n { color: #F8F8F2 } /* Name */
+.hl .o { color: #FF4689 } /* Operator */
+.hl .x { color: #F8F8F2 } /* Other */
+.hl .p { color: #F8F8F2 } /* Punctuation */
+.hl .ch { color: #959077 } /* Comment.Hashbang */
+.hl .cm { color: #959077 } /* Comment.Multiline */
+.hl .cp { color: #959077 } /* Comment.Preproc */
+.hl .cpf { color: #959077 } /* Comment.PreprocFile */
+.hl .c1 { color: #959077 } /* Comment.Single */
+.hl .cs { color: #959077 } /* Comment.Special */
+.hl .gd { color: #FF4689 } /* Generic.Deleted */
+.hl .ge { color: #F8F8F2; font-style: italic } /* Generic.Emph */
+.hl .ges { color: #F8F8F2; font-weight: bold; font-style: italic } /* Generic.EmphStrong */
+.hl .gr { color: #FF4689 } /* Generic.Error */
+.hl .gh { color: #F8F8F2 } /* Generic.Heading */
+.hl .gi { color: #A6E22E } /* Generic.Inserted */
+.hl .go { color: #66D9EF } /* Generic.Output */
+.hl .gp { color: #FF4689; font-weight: bold } /* Generic.Prompt */
+.hl .gs { color: #F8F8F2; font-weight: bold } /* Generic.Strong */
+.hl .gu { color: #959077 } /* Generic.Subheading */
+.hl .gt { color: #66D9EF } /* Generic.Traceback */
+.hl .kc { color: #66D9EF } /* Keyword.Constant */
+.hl .kd { color: #66D9EF } /* Keyword.Declaration */
+.hl .kn { color: #FF4689 } /* Keyword.Namespace */
+.hl .kp { color: #66D9EF } /* Keyword.Pseudo */
+.hl .kr { color: #66D9EF } /* Keyword.Reserved */
+.hl .kt { color: #66D9EF } /* Keyword.Type */
+.hl .ld { color: #E6DB74 } /* Literal.Date */
+.hl .m { color: #AE81FF } /* Literal.Number */
+.hl .s { color: #E6DB74 } /* Literal.String */
+.hl .na { color: #A6E22E } /* Name.Attribute */
+.hl .nb { color: #A6E22E } /* Name.Builtin */
+.hl .nc { color: #A6E22E } /* Name.Class */
+.hl .no { color: #66D9EF } /* Name.Constant */
+.hl .nd { color: #A6E22E } /* Name.Decorator */
+.hl .ni { color: #F8F8F2 } /* Name.Entity */
+.hl .ne { color: #A6E22E } /* Name.Exception */
+.hl .nf { color: #A6E22E } /* Name.Function */
+.hl .nl { color: #F8F8F2 } /* Name.Label */
+.hl .nn { color: #F8F8F2 } /* Name.Namespace */
+.hl .nx { color: #A6E22E } /* Name.Other */
+.hl .py { color: #F8F8F2 } /* Name.Property */
+.hl .nt { color: #FF4689 } /* Name.Tag */
+.hl .nv { color: #F8F8F2 } /* Name.Variable */
+.hl .ow { color: #FF4689 } /* Operator.Word */
+.hl .pm { color: #F8F8F2 } /* Punctuation.Marker */
+.hl .w { color: #F8F8F2 } /* Text.Whitespace */
+.hl .mb { color: #AE81FF } /* Literal.Number.Bin */
+.hl .mf { color: #AE81FF } /* Literal.Number.Float */
+.hl .mh { color: #AE81FF } /* Literal.Number.Hex */
+.hl .mi { color: #AE81FF } /* Literal.Number.Integer */
+.hl .mo { color: #AE81FF } /* Literal.Number.Oct */
+.hl .sa { color: #E6DB74 } /* Literal.String.Affix */
+.hl .sb { color: #E6DB74 } /* Literal.String.Backtick */
+.hl .sc { color: #E6DB74 } /* Literal.String.Char */
+.hl .dl { color: #E6DB74 } /* Literal.String.Delimiter */
+.hl .sd { color: #E6DB74 } /* Literal.String.Doc */
+.hl .s2 { color: #E6DB74 } /* Literal.String.Double */
+.hl .se { color: #AE81FF } /* Literal.String.Escape */
+.hl .sh { color: #E6DB74 } /* Literal.String.Heredoc */
+.hl .si { color: #E6DB74 } /* Literal.String.Interpol */
+.hl .sx { color: #E6DB74 } /* Literal.String.Other */
+.hl .sr { color: #E6DB74 } /* Literal.String.Regex */
+.hl .s1 { color: #E6DB74 } /* Literal.String.Single */
+.hl .ss { color: #E6DB74 } /* Literal.String.Symbol */
+.hl .bp { color: #A6E22E } /* Name.Builtin.Pseudo */
+.hl .fm { color: #A6E22E } /* Name.Function.Magic */
+.hl .vc { color: #F8F8F2 } /* Name.Variable.Class */
+.hl .vg { color: #F8F8F2 } /* Name.Variable.Global */
+.hl .vi { color: #F8F8F2 } /* Name.Variable.Instance */
+.hl .vm { color: #F8F8F2 } /* Name.Variable.Magic */
+.hl .il { color: #AE81FF } /* Literal.Number.Integer.Long */.hl pre{background:#1B2B3A}</style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="../../">問達工作室</a>
+  <div class="top-right"><nav aria-label="頁面導覽"><a href="../../">首頁</a><a href="../../blog/">文章</a><a href="../../#contact">預約診斷</a></nav>
+  <button type="button" class="theme-toggle" aria-label="切換深色模式" aria-pressed="false"><svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"/></svg><svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg></button></div>
+</header>
+<main class="wrap">
+<article>
+<h1>沒有文件的系統，一天內畫出它的樣子：先查設定檔、排程和資料庫，最後才讀程式碼</h1>
+<div class="meta"><span>2026-11-27</span><span>接手舊系統</span></div>
+<p>一家做訂製家具的小公司，官網接單、後台出貨，系統是幾年前請外包工程師做的。合約結束後，那位工程師就聯絡不上了。</p>
+<p>新接手的工程師拿到三樣東西：正式主機的 SSH 帳號、資料庫帳號，和一份只有網站程式的 repo。沒有文件，程式裡幾乎沒有註解。</p>
+<p>老闆的問題很實際：「下個月想把優惠券功能打開，順便改 LINE 出貨通知的文字。會動到哪些地方？先跟我說這套系統到底有哪些東西。」</p>
+<p>以下的公司、主機、帳號、網址與時間都是虛構的示範情境；程式與 SQL 是在示範資料上實際執行的。</p>
+<h2>先別打開程式碼</h2>
+<p>直覺的做法是 clone 下來，從 <code>Program.cs</code> 或 <code>index.php</code> 一路往下讀。問題是程式碼回答的是「怎麼做」，而接手第一天要回答的是另外四件事：</p>
+<ul>
+<li>系統由哪幾塊組成？</li>
+<li>每一塊<strong>連到誰</strong>（資料庫、外部 API、檔案主機）？</li>
+<li>什麼東西會在沒人操作的時候<strong>自己動</strong>？</li>
+<li>資料庫裡哪些表<strong>還活著</strong>，彼此怎麼關聯？</li>
+</ul>
+<p>這四件事都會在正式主機上留下痕跡：設定檔、排程、資料庫。讀它們比讀程式碼快得多，而且讀到的是「正式環境實際在跑的樣子」，不是 repo 裡某個版本的樣子。</p>
+<p>這次的示範就是一個很典型的例子：repo 裡只有網站，但正式主機上還有一支每週跑的報表程式、兩支腳本，它們從來沒進過版控。</p>
+<figure><img src="fig-1.svg" alt="一天的順序：先查會留下痕跡的地方，程式碼等到要改功能時再讀相關的部分" loading="lazy"><figcaption>一天的順序：先查會留下痕跡的地方，程式碼等到要改功能時再讀相關的部分</figcaption></figure>
+<h2>上午：把正式主機上的東西複製下來</h2>
+<p>原則只有一個：<strong>正式主機只讀不改</strong>。所有分析都在複製出來的資料夾上做。</p>
+<p>要複製的是部署資料夾（不含 log 和使用者上傳的檔案），以及排程的設定。以 Linux 主機為例，大致是這幾個指令（示範情境沒有真的主機，<strong>以下指令沒有實際執行</strong>）：</p>
+<div class="hl"><pre><span></span><code><span class="c1"># 未實際執行：在自己的電腦上，從正式主機拉一份下來</span>
+rsync<span class="w"> </span>-av<span class="w"> </span>--exclude<span class="o">=</span><span class="s1">'*.log'</span><span class="w"> </span>--exclude<span class="o">=</span><span class="s1">'uploads/'</span><span class="w"> </span>deploy@正式主機:/opt/shop/<span class="w"> </span>./legacy/
+ssh<span class="w"> </span>deploy@正式主機<span class="w"> </span><span class="s1">'crontab -l'</span><span class="w"> </span>&gt;<span class="w"> </span>./legacy/cron/crontab.txt
+<span class="c1"># crontab -l 只會列出目前這個帳號的排程，root 和其他帳號也要看</span>
+ssh<span class="w"> </span>deploy@正式主機<span class="w"> </span><span class="s1">'sudo crontab -l -u root; ls /etc/cron.d; systemctl list-timers --all'</span>
+</code></pre></div>
+
+<p>Windows 主機的排程在「工作排程器」，可以用 <code>schtasks /query /fo csv /v</code> 匯出成 CSV；用 SQL Server 的話，SQL Server Agent 的作業也是排程，存在 <code>msdb</code> 資料庫裡。（這兩項也沒有實際執行。）</p>
+<p>複製下來的設定檔裡有資料庫密碼。這份資料夾要和正式環境一樣小心保管，不要放進 repo、不要貼到聊天群組或 AI 工具裡。</p>
+<p>示範情境複製下來的資料夾長這樣：</p>
+<div class="hl"><pre><span></span><code>$ find legacy -type f | sort
+legacy/batch/ReportJob/ReportJob.exe
+legacy/batch/ReportJob/ReportJob.exe.config
+legacy/cron/crontab.txt
+legacy/scripts/.env
+legacy/scripts/cleanup_orders.sh
+legacy/scripts/import_stock.php
+legacy/scripts/sync_stock.sh
+legacy/web/appsettings.Production.json
+legacy/web/appsettings.json
+</code></pre></div>
+
+<p>三種設定檔格式：網站是 ASP.NET Core 的 <code>appsettings.json</code>，報表程式是 .NET Framework 的 <code>.exe.config</code>，腳本用 <code>.env</code>。一套系統用了三種寫法，通常代表它是不同時期、可能不同人一塊一塊加上去的。</p>
+<h2>設定檔與排程：它連到誰、什麼時候自己動</h2>
+<p>檔案不多的時候，一個一個打開看也可以。但設定檔一多，很容易漏看，也很難比對「這個檔案說資料庫在 A，那個檔案說在 B」。所以寫一支小程式來做這件事。</p>
+<p>這支 .NET 8 主控台程式會：</p>
+<ul>
+<li>讀 <code>.json</code>、<code>.config</code>、<code>.env</code>，找出連線字串、網址、網路磁碟路徑和 SMTP 主機，<strong>不輸出密碼</strong>。</li>
+<li>知道 <code>appsettings.Production.json</code> 會覆寫 <code>appsettings.json</code> 的同名設定，只留下實際生效的那一個，並把被覆寫的記進待確認。</li>
+<li>讀 crontab，找出每個排程執行的程式，檢查它在不在部署路徑底下、有沒有被註解掉。</li>
+<li>最後輸出一份 Mermaid 架構圖。</li>
+</ul>
+<p>它只認得示範情境用到的格式，判斷規則也很粗略（例如用 <code>Server=</code> 判斷是不是連線字串）。拿到你的系統上用，要依實際的設定檔格式調整。</p>
+<div class="hl"><pre><span></span><code><span class="k">using</span><span class="w"> </span><span class="nn">System.Text</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="nn">System.Text.Json</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="nn">System.Text.RegularExpressions</span><span class="p">;</span>
+<span class="k">using</span><span class="w"> </span><span class="nn">System.Xml.Linq</span><span class="p">;</span>
+
+<span class="c1">// 用法：dotnet run -- &lt;資料夾&gt; &lt;正式主機上的部署路徑&gt;</span>
+<span class="c1">// 例如：dotnet run -- ./legacy /opt/shop</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">args</span><span class="p">.</span><span class="n">Length</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">2</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">"用法：SystemMap &lt;資料夾&gt; &lt;部署路徑&gt;"</span><span class="p">);</span><span class="w"> </span><span class="k">return</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">root</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Path</span><span class="p">.</span><span class="n">GetFullPath</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]);</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">deployRoot</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">].</span><span class="n">TrimEnd</span><span class="p">(</span><span class="sc">'/'</span><span class="p">);</span>
+
+<span class="kt">var</span><span class="w"> </span><span class="n">found</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">Link</span><span class="o">&gt;</span><span class="p">();</span><span class="w">     </span><span class="c1">// 設定檔裡找到的「連到誰」</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">jobs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">Job</span><span class="o">&gt;</span><span class="p">();</span><span class="w">       </span><span class="c1">// 排程</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">notes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="kt">string</span><span class="o">&gt;</span><span class="p">();</span><span class="w">   </span><span class="c1">// 待確認</span>
+
+<span class="k">foreach</span><span class="w"> </span><span class="p">(</span><span class="kt">var</span><span class="w"> </span><span class="n">file</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">Directory</span><span class="p">.</span><span class="n">EnumerateFiles</span><span class="p">(</span><span class="n">root</span><span class="p">,</span><span class="w"> </span><span class="s">"*"</span><span class="p">,</span><span class="w"> </span><span class="n">SearchOption</span><span class="p">.</span><span class="n">AllDirectories</span><span class="p">).</span><span class="n">Order</span><span class="p">())</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="kt">var</span><span class="w"> </span><span class="n">rel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Path</span><span class="p">.</span><span class="n">GetRelativePath</span><span class="p">(</span><span class="n">root</span><span class="p">,</span><span class="w"> </span><span class="n">file</span><span class="p">).</span><span class="n">Replace</span><span class="p">(</span><span class="sc">'\\'</span><span class="p">,</span><span class="w"> </span><span class="sc">'/'</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">var</span><span class="w"> </span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Path</span><span class="p">.</span><span class="n">GetFileName</span><span class="p">(</span><span class="n">file</span><span class="p">);</span>
+<span class="w">    </span><span class="kt">var</span><span class="w"> </span><span class="n">comp</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Path</span><span class="p">.</span><span class="n">GetDirectoryName</span><span class="p">(</span><span class="n">rel</span><span class="p">)</span><span class="o">!</span><span class="p">.</span><span class="n">Replace</span><span class="p">(</span><span class="sc">'\\'</span><span class="p">,</span><span class="w"> </span><span class="sc">'/'</span><span class="p">);</span><span class="w">   </span><span class="c1">// 設定檔所在的資料夾，當成一個元件</span>
+
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">name</span><span class="p">.</span><span class="n">EndsWith</span><span class="p">(</span><span class="s">".json"</span><span class="p">))</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="k">using</span><span class="w"> </span><span class="nn">var</span><span class="w"> </span><span class="n">doc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">JsonDocument</span><span class="p">.</span><span class="n">Parse</span><span class="p">(</span><span class="n">File</span><span class="p">.</span><span class="n">ReadAllText</span><span class="p">(</span><span class="n">file</span><span class="p">));</span>
+<span class="w">        </span><span class="n">Walk</span><span class="p">(</span><span class="n">doc</span><span class="p">.</span><span class="n">RootElement</span><span class="p">,</span><span class="w"> </span><span class="s">""</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="n">key</span><span class="p">,</span><span class="w"> </span><span class="k">value</span><span class="p">)</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">Classify</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span><span class="w"> </span><span class="n">rel</span><span class="p">,</span><span class="w"> </span><span class="n">key</span><span class="p">,</span><span class="w"> </span><span class="k">value</span><span class="p">));</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">else</span><span class="w"> </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="n">name</span><span class="p">.</span><span class="n">EndsWith</span><span class="p">(</span><span class="s">".config"</span><span class="p">))</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="kt">var</span><span class="w"> </span><span class="n">x</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">XDocument</span><span class="p">.</span><span class="n">Load</span><span class="p">(</span><span class="n">file</span><span class="p">);</span>
+<span class="w">        </span><span class="k">foreach</span><span class="w"> </span><span class="p">(</span><span class="kt">var</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">x</span><span class="p">.</span><span class="n">Descendants</span><span class="p">(</span><span class="s">"connectionStrings"</span><span class="p">).</span><span class="n">Elements</span><span class="p">(</span><span class="s">"add"</span><span class="p">))</span>
+<span class="w">            </span><span class="n">Classify</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span><span class="w"> </span><span class="n">rel</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="kt">string</span><span class="p">)</span><span class="n">a</span><span class="p">.</span><span class="n">Attribute</span><span class="p">(</span><span class="s">"name"</span><span class="p">)</span><span class="o">!</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="kt">string</span><span class="p">)</span><span class="n">a</span><span class="p">.</span><span class="n">Attribute</span><span class="p">(</span><span class="s">"connectionString"</span><span class="p">)</span><span class="o">!</span><span class="p">);</span>
+<span class="w">        </span><span class="k">foreach</span><span class="w"> </span><span class="p">(</span><span class="kt">var</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">x</span><span class="p">.</span><span class="n">Descendants</span><span class="p">(</span><span class="s">"appSettings"</span><span class="p">).</span><span class="n">Elements</span><span class="p">(</span><span class="s">"add"</span><span class="p">))</span>
+<span class="w">            </span><span class="n">Classify</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span><span class="w"> </span><span class="n">rel</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="kt">string</span><span class="p">)</span><span class="n">a</span><span class="p">.</span><span class="n">Attribute</span><span class="p">(</span><span class="s">"key"</span><span class="p">)</span><span class="o">!</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="kt">string</span><span class="p">)</span><span class="n">a</span><span class="p">.</span><span class="n">Attribute</span><span class="p">(</span><span class="s">"value"</span><span class="p">)</span><span class="o">!</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">else</span><span class="w"> </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="s">".env"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="kt">var</span><span class="w"> </span><span class="n">env</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">File</span><span class="p">.</span><span class="n">ReadLines</span><span class="p">(</span><span class="n">file</span><span class="p">).</span><span class="n">Where</span><span class="p">(</span><span class="n">l</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">l</span><span class="p">.</span><span class="n">Contains</span><span class="p">(</span><span class="sc">'='</span><span class="p">)</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="o">!</span><span class="n">l</span><span class="p">.</span><span class="n">StartsWith</span><span class="p">(</span><span class="sc">'#'</span><span class="p">))</span>
+<span class="w">            </span><span class="p">.</span><span class="n">Select</span><span class="p">(</span><span class="n">l</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">l</span><span class="p">.</span><span class="n">Split</span><span class="p">(</span><span class="sc">'='</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">)).</span><span class="n">ToDictionary</span><span class="p">(</span><span class="n">p</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">].</span><span class="n">Trim</span><span class="p">(),</span><span class="w"> </span><span class="n">p</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">].</span><span class="n">Trim</span><span class="p">());</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">env</span><span class="p">.</span><span class="n">TryGetValue</span><span class="p">(</span><span class="s">"DB_HOST"</span><span class="p">,</span><span class="w"> </span><span class="k">out</span><span class="w"> </span><span class="kt">var</span><span class="w"> </span><span class="n">h</span><span class="p">))</span>
+<span class="w">            </span><span class="n">found</span><span class="p">.</span><span class="n">Add</span><span class="p">(</span><span class="k">new</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span><span class="w"> </span><span class="n">rel</span><span class="p">,</span><span class="w"> </span><span class="s">"DB_HOST"</span><span class="p">,</span><span class="w"> </span><span class="s">"資料庫"</span><span class="p">,</span><span class="w"> </span><span class="s">$"{h}/{env.GetValueOrDefault("</span><span class="n">DB_NAME</span><span class="s">", "</span><span class="o">?</span><span class="s">")}"</span><span class="p">));</span>
+<span class="w">        </span><span class="k">foreach</span><span class="w"> </span><span class="p">(</span><span class="kt">var</span><span class="w"> </span><span class="p">(</span><span class="n">k</span><span class="p">,</span><span class="w"> </span><span class="n">v</span><span class="p">)</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">env</span><span class="p">.</span><span class="n">Where</span><span class="p">(</span><span class="n">e</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="o">!</span><span class="n">e</span><span class="p">.</span><span class="n">Key</span><span class="p">.</span><span class="n">StartsWith</span><span class="p">(</span><span class="s">"DB_"</span><span class="p">)))</span><span class="w"> </span><span class="n">Classify</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span><span class="w"> </span><span class="n">rel</span><span class="p">,</span><span class="w"> </span><span class="n">k</span><span class="p">,</span><span class="w"> </span><span class="n">v</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">else</span><span class="w"> </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="n">name</span><span class="p">.</span><span class="n">StartsWith</span><span class="p">(</span><span class="s">"crontab"</span><span class="p">))</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="k">foreach</span><span class="w"> </span><span class="p">(</span><span class="kt">var</span><span class="w"> </span><span class="n">line</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">File</span><span class="p">.</span><span class="n">ReadLines</span><span class="p">(</span><span class="n">file</span><span class="p">))</span>
+<span class="w">        </span><span class="p">{</span>
+<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">Regex</span><span class="p">.</span><span class="n">IsMatch</span><span class="p">(</span><span class="n">line</span><span class="p">,</span><span class="w"> </span><span class="s">"^MAILTO=\"?\"?$"</span><span class="p">))</span>
+<span class="w">                </span><span class="n">notes</span><span class="p">.</span><span class="n">Add</span><span class="p">(</span><span class="s">$"{rel}：MAILTO 是空的，排程失敗不會寄信給任何人"</span><span class="p">);</span>
+<span class="w">            </span><span class="kt">var</span><span class="w"> </span><span class="n">m</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Regex</span><span class="p">.</span><span class="n">Match</span><span class="p">(</span><span class="n">line</span><span class="p">,</span><span class="w"> </span><span class="s">@"^(#\s*)?((?:\S+\s+){4}\S+)\s+(.+)$"</span><span class="p">);</span>
+<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">m</span><span class="p">.</span><span class="n">Success</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="o">!</span><span class="n">Regex</span><span class="p">.</span><span class="n">IsMatch</span><span class="p">(</span><span class="n">m</span><span class="p">.</span><span class="n">Groups</span><span class="p">[</span><span class="mi">2</span><span class="p">].</span><span class="n">Value</span><span class="p">,</span><span class="w"> </span><span class="s">@"^[\d*/,\-]"</span><span class="p">))</span><span class="w"> </span><span class="k">continue</span><span class="p">;</span>
+<span class="w">            </span><span class="kt">var</span><span class="w"> </span><span class="n">cmd</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">m</span><span class="p">.</span><span class="n">Groups</span><span class="p">[</span><span class="mi">3</span><span class="p">].</span><span class="n">Value</span><span class="p">;</span>
+<span class="w">            </span><span class="kt">var</span><span class="w"> </span><span class="n">target</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Regex</span><span class="p">.</span><span class="n">Match</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span><span class="w"> </span><span class="s">@"\S+\.(exe|php|sh|py|dll)\b"</span><span class="p">).</span><span class="n">Value</span><span class="p">;</span>
+<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">target</span><span class="p">.</span><span class="n">Contains</span><span class="p">(</span><span class="sc">'/'</span><span class="p">))</span><span class="w">   </span><span class="c1">// 例如「cd /opt/shop/x &amp;&amp; mono X.exe」</span>
+<span class="w">                </span><span class="n">target</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Regex</span><span class="p">.</span><span class="n">Match</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span><span class="w"> </span><span class="s">@"cd\s+(\S+)"</span><span class="p">).</span><span class="n">Groups</span><span class="p">[</span><span class="mi">1</span><span class="p">].</span><span class="n">Value</span><span class="p">.</span><span class="n">TrimEnd</span><span class="p">(</span><span class="sc">'/'</span><span class="p">)</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">"/"</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">target</span><span class="p">;</span>
+<span class="w">            </span><span class="kt">var</span><span class="w"> </span><span class="n">inDeploy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">target</span><span class="p">.</span><span class="n">StartsWith</span><span class="p">(</span><span class="n">deployRoot</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">"/"</span><span class="p">);</span>
+<span class="w">            </span><span class="kt">var</span><span class="w"> </span><span class="n">local</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Path</span><span class="p">.</span><span class="n">Combine</span><span class="p">(</span><span class="n">root</span><span class="p">,</span><span class="w"> </span><span class="n">target</span><span class="p">.</span><span class="n">Replace</span><span class="p">(</span><span class="n">deployRoot</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">"/"</span><span class="p">,</span><span class="w"> </span><span class="s">""</span><span class="p">));</span>
+<span class="w">            </span><span class="n">jobs</span><span class="p">.</span><span class="n">Add</span><span class="p">(</span><span class="k">new</span><span class="p">(</span><span class="n">m</span><span class="p">.</span><span class="n">Groups</span><span class="p">[</span><span class="mi">2</span><span class="p">].</span><span class="n">Value</span><span class="p">,</span><span class="w"> </span><span class="n">target</span><span class="p">,</span><span class="w"> </span><span class="n">inDeploy</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="n">Path</span><span class="p">.</span><span class="n">GetDirectoryName</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="n">GetRelativePath</span><span class="p">(</span><span class="n">root</span><span class="p">,</span><span class="w"> </span><span class="n">local</span><span class="p">))</span><span class="o">!</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="s">""</span><span class="p">,</span>
+<span class="w">                </span><span class="n">m</span><span class="p">.</span><span class="n">Groups</span><span class="p">[</span><span class="mi">1</span><span class="p">].</span><span class="n">Success</span><span class="p">,</span><span class="w"> </span><span class="n">inDeploy</span><span class="p">,</span><span class="w"> </span><span class="n">inDeploy</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">File</span><span class="p">.</span><span class="n">Exists</span><span class="p">(</span><span class="n">local</span><span class="p">)));</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+
+<span class="c1">// .NET 的 appsettings.{環境}.json 會覆寫 appsettings.json 的同名設定</span>
+<span class="k">foreach</span><span class="w"> </span><span class="p">(</span><span class="kt">var</span><span class="w"> </span><span class="n">o</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">found</span><span class="p">.</span><span class="n">Where</span><span class="p">(</span><span class="n">f</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">Regex</span><span class="p">.</span><span class="n">IsMatch</span><span class="p">(</span><span class="n">f</span><span class="p">.</span><span class="n">File</span><span class="p">,</span><span class="w"> </span><span class="s">@"appsettings\.\w+\.json$"</span><span class="p">)).</span><span class="n">ToList</span><span class="p">())</span>
+<span class="w">    </span><span class="k">foreach</span><span class="w"> </span><span class="p">(</span><span class="kt">var</span><span class="w"> </span><span class="n">b</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">found</span><span class="p">.</span><span class="n">Where</span><span class="p">(</span><span class="n">f</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">f</span><span class="p">.</span><span class="n">Comp</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">o</span><span class="p">.</span><span class="n">Comp</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">f</span><span class="p">.</span><span class="n">Key</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">o</span><span class="p">.</span><span class="n">Key</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">f</span><span class="p">.</span><span class="n">File</span><span class="p">.</span><span class="n">EndsWith</span><span class="p">(</span><span class="s">"/appsettings.json"</span><span class="p">)).</span><span class="n">ToList</span><span class="p">())</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="n">found</span><span class="p">.</span><span class="n">Remove</span><span class="p">(</span><span class="n">b</span><span class="p">);</span>
+<span class="w">        </span><span class="n">notes</span><span class="p">.</span><span class="n">Add</span><span class="p">(</span><span class="s">$"{b.File} 的 {b.Key} 指向 {b.Target}，但被 {Path.GetFileName(o.File)} 覆寫成 {o.Target}"</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="c1">// 同一個資料庫名稱，出現在不同主機</span>
+<span class="k">foreach</span><span class="w"> </span><span class="p">(</span><span class="kt">var</span><span class="w"> </span><span class="n">g</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">found</span><span class="p">.</span><span class="n">Where</span><span class="p">(</span><span class="n">f</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">f</span><span class="p">.</span><span class="n">Kind</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="s">"資料庫"</span><span class="p">).</span><span class="n">GroupBy</span><span class="p">(</span><span class="n">f</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">f</span><span class="p">.</span><span class="n">Target</span><span class="p">.</span><span class="n">Split</span><span class="p">(</span><span class="sc">'/'</span><span class="p">)[</span><span class="mi">1</span><span class="p">]))</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">g</span><span class="p">.</span><span class="n">Select</span><span class="p">(</span><span class="n">f</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">f</span><span class="p">.</span><span class="n">Target</span><span class="p">).</span><span class="n">Distinct</span><span class="p">().</span><span class="n">Count</span><span class="p">()</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span>
+<span class="w">        </span><span class="n">notes</span><span class="p">.</span><span class="n">Add</span><span class="p">(</span><span class="s">$"資料庫 {g.Key} 出現在不同主機："</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="kt">string</span><span class="p">.</span><span class="n">Join</span><span class="p">(</span><span class="s">"、"</span><span class="p">,</span>
+<span class="w">            </span><span class="n">g</span><span class="p">.</span><span class="n">GroupBy</span><span class="p">(</span><span class="n">f</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">f</span><span class="p">.</span><span class="n">Target</span><span class="p">.</span><span class="n">Split</span><span class="p">(</span><span class="sc">'/'</span><span class="p">)[</span><span class="mi">0</span><span class="p">]).</span><span class="n">Select</span><span class="p">(</span><span class="n">h</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="s">$"{h.Key}（{string.Join("</span><span class="err">、</span><span class="s">", h.Select(f =&gt; f.Comp))}）"</span><span class="p">)));</span>
+
+<span class="k">foreach</span><span class="w"> </span><span class="p">(</span><span class="kt">var</span><span class="w"> </span><span class="n">j</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">jobs</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="kt">var</span><span class="w"> </span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Path</span><span class="p">.</span><span class="n">GetFileName</span><span class="p">(</span><span class="n">j</span><span class="p">.</span><span class="n">Program</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">j</span><span class="p">.</span><span class="n">Disabled</span><span class="p">)</span><span class="w"> </span><span class="n">notes</span><span class="p">.</span><span class="n">Add</span><span class="p">(</span><span class="s">$"排程 {name} 被註解掉了：是停用，還是暫停後忘了打開？"</span><span class="p">);</span>
+<span class="w">    </span><span class="k">else</span><span class="w"> </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">j</span><span class="p">.</span><span class="n">InDeploy</span><span class="p">)</span><span class="w"> </span><span class="n">notes</span><span class="p">.</span><span class="n">Add</span><span class="p">(</span><span class="s">$"排程 {name} 放在 {Path.GetDirectoryName(j.Program)}，不在 {deployRoot} 底下"</span><span class="p">);</span>
+<span class="w">    </span><span class="k">else</span><span class="w"> </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">j</span><span class="p">.</span><span class="n">Exists</span><span class="p">)</span><span class="w"> </span><span class="n">notes</span><span class="p">.</span><span class="n">Add</span><span class="p">(</span><span class="s">$"排程 {name} 在資料夾裡找不到"</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">"== 設定檔：這些元件連到哪裡（密碼不輸出） =="</span><span class="p">);</span>
+<span class="k">foreach</span><span class="w"> </span><span class="p">(</span><span class="kt">var</span><span class="w"> </span><span class="n">f</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">found</span><span class="p">)</span><span class="w"> </span><span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">$"{Pad(f.Comp, 16)}{Pad(f.Kind, 9)}{Pad(f.Target, 32)}← {Path.GetFileName(f.File)} {f.Key}"</span><span class="p">);</span>
+<span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">"\n== 排程 =="</span><span class="p">);</span>
+<span class="k">foreach</span><span class="w"> </span><span class="p">(</span><span class="kt">var</span><span class="w"> </span><span class="n">j</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">jobs</span><span class="p">)</span>
+<span class="w">    </span><span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">$"{Pad(j.Schedule, 14)}{Pad(j.Disabled ? "</span><span class="err">已註解</span><span class="s">" : "</span><span class="err">啟用</span><span class="s">", 8)}{j.Program}"</span><span class="p">);</span>
+<span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">"\n== 待確認 =="</span><span class="p">);</span>
+<span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">notes</span><span class="p">.</span><span class="n">Count</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">$"{i + 1}. {notes[i]}"</span><span class="p">);</span>
+
+<span class="c1">// 輸出 Mermaid：推得出來的畫實線，有疑問的畫虛線</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">sb</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">StringBuilder</span><span class="p">(</span><span class="s">"flowchart LR\n"</span><span class="p">);</span>
+<span class="kt">var</span><span class="w"> </span><span class="n">ids</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Dictionary</span><span class="o">&lt;</span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="o">&gt;</span><span class="p">();</span>
+<span class="kt">string</span><span class="w"> </span><span class="nf">Id</span><span class="p">(</span><span class="kt">string</span><span class="w"> </span><span class="n">s</span><span class="p">)</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">ids</span><span class="p">.</span><span class="n">TryGetValue</span><span class="p">(</span><span class="n">s</span><span class="p">,</span><span class="w"> </span><span class="k">out</span><span class="w"> </span><span class="kt">var</span><span class="w"> </span><span class="n">v</span><span class="p">)</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="n">v</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="n">ids</span><span class="p">[</span><span class="n">s</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">$"n{ids.Count + 1}"</span><span class="p">;</span>
+<span class="kt">string</span><span class="w"> </span><span class="nf">L</span><span class="p">(</span><span class="kt">string</span><span class="w"> </span><span class="n">s</span><span class="p">)</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">Replace</span><span class="p">(</span><span class="s">"\\"</span><span class="p">,</span><span class="w"> </span><span class="s">"\\\u200B"</span><span class="p">);</span><span class="w">   </span><span class="c1">// 反斜線後面補一個零寬空白，免得 \n 被 Mermaid 當成換行</span>
+<span class="k">foreach</span><span class="w"> </span><span class="p">(</span><span class="kt">var</span><span class="w"> </span><span class="n">f</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">found</span><span class="p">)</span>
+<span class="w">    </span><span class="n">sb</span><span class="p">.</span><span class="n">AppendLine</span><span class="p">(</span><span class="s">$"    {Id(f.Comp)}[\"{L(f.Comp)}\"] --&gt; {Id(f.Target)}[(\"{f.Kind}&lt;br/&gt;{L(f.Target)}\")]"</span><span class="p">);</span>
+<span class="k">foreach</span><span class="w"> </span><span class="p">(</span><span class="kt">var</span><span class="w"> </span><span class="n">j</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">jobs</span><span class="p">.</span><span class="n">Where</span><span class="p">(</span><span class="n">j</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="o">!</span><span class="n">j</span><span class="p">.</span><span class="n">Disabled</span><span class="p">))</span><span class="w">   </span><span class="c1">// 排程放最後畫，版面比較不會交錯</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="kt">var</span><span class="w"> </span><span class="n">to</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">j</span><span class="p">.</span><span class="n">Exists</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="n">j</span><span class="p">.</span><span class="n">Comp</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="n">j</span><span class="p">.</span><span class="n">Program</span><span class="p">;</span>
+<span class="w">    </span><span class="n">sb</span><span class="p">.</span><span class="n">AppendLine</span><span class="p">(</span><span class="s">$"    cron([\"cron\"]) {(j.Exists ? "</span><span class="o">--&gt;</span><span class="s">" : "</span><span class="o">-</span><span class="p">.</span><span class="o">-&gt;</span><span class="s">")}|\"{j.Schedule}\"| {Id(to)}[\"{L(to)}\"]"</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">j</span><span class="p">.</span><span class="n">InDeploy</span><span class="p">)</span><span class="w"> </span><span class="n">sb</span><span class="p">.</span><span class="n">AppendLine</span><span class="p">(</span><span class="s">$"    {Id(to)} -.-&gt; {Id(to + "</span><span class="o">?</span><span class="s">")}[\"連到哪裡？&lt;br/&gt;檔案沒有複製到\"]"</span><span class="p">);</span>
+<span class="p">}</span>
+<span class="n">File</span><span class="p">.</span><span class="n">WriteAllText</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="n">Combine</span><span class="p">(</span><span class="n">root</span><span class="p">,</span><span class="w"> </span><span class="s">".."</span><span class="p">,</span><span class="w"> </span><span class="s">"system-map.mmd"</span><span class="p">),</span><span class="w"> </span><span class="n">sb</span><span class="p">.</span><span class="n">ToString</span><span class="p">());</span>
+<span class="n">Console</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s">"\n已輸出 system-map.mmd"</span><span class="p">);</span>
+
+<span class="c1">// ---- 以下是輔助函式 ----</span>
+<span class="c1">// 中文字在終端機佔兩格，用顯示寬度補空白才對得齊</span>
+<span class="kt">string</span><span class="w"> </span><span class="nf">Pad</span><span class="p">(</span><span class="kt">string</span><span class="w"> </span><span class="n">s</span><span class="p">,</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">width</span><span class="p">)</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">s</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="kt">string</span><span class="p">(</span><span class="sc">' '</span><span class="p">,</span><span class="w"> </span><span class="n">Math</span><span class="p">.</span><span class="n">Max</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">width</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">Sum</span><span class="p">(</span><span class="n">c</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">c</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="mh">0x2E80</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">)));</span>
+
+<span class="k">void</span><span class="w"> </span><span class="nf">Walk</span><span class="p">(</span><span class="n">JsonElement</span><span class="w"> </span><span class="n">e</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="n">path</span><span class="p">,</span><span class="w"> </span><span class="n">Action</span><span class="o">&lt;</span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="o">&gt;</span><span class="w"> </span><span class="n">onString</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">e</span><span class="p">.</span><span class="n">ValueKind</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">JsonValueKind</span><span class="p">.</span><span class="n">Object</span><span class="p">)</span>
+<span class="w">        </span><span class="k">foreach</span><span class="w"> </span><span class="p">(</span><span class="kt">var</span><span class="w"> </span><span class="n">p</span><span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="n">EnumerateObject</span><span class="p">())</span><span class="w"> </span><span class="n">Walk</span><span class="p">(</span><span class="n">p</span><span class="p">.</span><span class="n">Value</span><span class="p">,</span><span class="w"> </span><span class="n">path</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="s">""</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="n">p</span><span class="p">.</span><span class="n">Name</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="s">$"{path}:{p.Name}"</span><span class="p">,</span><span class="w"> </span><span class="n">onString</span><span class="p">);</span>
+<span class="w">    </span><span class="k">else</span><span class="w"> </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="n">e</span><span class="p">.</span><span class="n">ValueKind</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">JsonValueKind</span><span class="p">.</span><span class="n">String</span><span class="p">)</span><span class="w"> </span><span class="n">onString</span><span class="p">(</span><span class="n">path</span><span class="p">,</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="n">GetString</span><span class="p">()</span><span class="o">!</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="k">void</span><span class="w"> </span><span class="nf">Classify</span><span class="p">(</span><span class="kt">string</span><span class="w"> </span><span class="n">comp</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="n">file</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="n">key</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="k">value</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">Regex</span><span class="p">.</span><span class="n">IsMatch</span><span class="p">(</span><span class="k">value</span><span class="p">,</span><span class="w"> </span><span class="s">@"(Server|Host|Data Source)="</span><span class="p">,</span><span class="w"> </span><span class="n">RegexOptions</span><span class="p">.</span><span class="n">IgnoreCase</span><span class="p">))</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="kt">var</span><span class="w"> </span><span class="n">kv</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">value</span><span class="p">.</span><span class="n">Split</span><span class="p">(</span><span class="sc">';'</span><span class="p">,</span><span class="w"> </span><span class="n">StringSplitOptions</span><span class="p">.</span><span class="n">RemoveEmptyEntries</span><span class="p">).</span><span class="n">Select</span><span class="p">(</span><span class="n">p</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">p</span><span class="p">.</span><span class="n">Split</span><span class="p">(</span><span class="sc">'='</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">))</span>
+<span class="w">            </span><span class="p">.</span><span class="n">Where</span><span class="p">(</span><span class="n">p</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">p</span><span class="p">.</span><span class="n">Length</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">2</span><span class="p">).</span><span class="n">ToDictionary</span><span class="p">(</span><span class="n">p</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">p</span><span class="p">[</span><span class="mi">0</span><span class="p">].</span><span class="n">Trim</span><span class="p">().</span><span class="n">ToLower</span><span class="p">(),</span><span class="w"> </span><span class="n">p</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">p</span><span class="p">[</span><span class="mi">1</span><span class="p">].</span><span class="n">Trim</span><span class="p">());</span>
+<span class="w">        </span><span class="kt">var</span><span class="w"> </span><span class="n">host</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">kv</span><span class="p">.</span><span class="n">GetValueOrDefault</span><span class="p">(</span><span class="s">"server"</span><span class="p">)</span><span class="w"> </span><span class="o">??</span><span class="w"> </span><span class="n">kv</span><span class="p">.</span><span class="n">GetValueOrDefault</span><span class="p">(</span><span class="s">"host"</span><span class="p">)</span><span class="w"> </span><span class="o">??</span><span class="w"> </span><span class="n">kv</span><span class="p">.</span><span class="n">GetValueOrDefault</span><span class="p">(</span><span class="s">"data source"</span><span class="p">);</span>
+<span class="w">        </span><span class="n">found</span><span class="p">.</span><span class="n">Add</span><span class="p">(</span><span class="k">new</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span><span class="w"> </span><span class="n">file</span><span class="p">,</span><span class="w"> </span><span class="n">key</span><span class="p">,</span><span class="w"> </span><span class="s">"資料庫"</span><span class="p">,</span><span class="w"> </span><span class="s">$"{host}/{kv.GetValueOrDefault("</span><span class="n">database</span><span class="s">", "</span><span class="o">?</span><span class="s">")}"</span><span class="p">));</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">else</span><span class="w"> </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="n">Uri</span><span class="p">.</span><span class="n">TryCreate</span><span class="p">(</span><span class="k">value</span><span class="p">,</span><span class="w"> </span><span class="n">UriKind</span><span class="p">.</span><span class="n">Absolute</span><span class="p">,</span><span class="w"> </span><span class="k">out</span><span class="w"> </span><span class="kt">var</span><span class="w"> </span><span class="n">u</span><span class="p">)</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">u</span><span class="p">.</span><span class="n">Scheme</span><span class="w"> </span><span class="k">is</span><span class="w"> </span><span class="s">"http"</span><span class="w"> </span><span class="k">or</span><span class="w"> </span><span class="s">"https"</span><span class="w"> </span><span class="k">or</span><span class="w"> </span><span class="s">"ftp"</span><span class="p">)</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">key</span><span class="p">.</span><span class="n">EndsWith</span><span class="p">(</span><span class="s">"NotifyUrl"</span><span class="p">))</span><span class="w"> </span><span class="k">return</span><span class="p">;</span><span class="w">   </span><span class="c1">// 別人呼叫我們的網址，不是我們連出去</span>
+<span class="w">        </span><span class="n">found</span><span class="p">.</span><span class="n">Add</span><span class="p">(</span><span class="k">new</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span><span class="w"> </span><span class="n">file</span><span class="p">,</span><span class="w"> </span><span class="n">key</span><span class="p">,</span><span class="w"> </span><span class="n">u</span><span class="p">.</span><span class="n">Scheme</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="s">"ftp"</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="s">"FTP"</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="s">"API"</span><span class="p">,</span><span class="w"> </span><span class="n">u</span><span class="p">.</span><span class="n">Host</span><span class="p">));</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">else</span><span class="w"> </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="k">value</span><span class="p">.</span><span class="n">StartsWith</span><span class="p">(</span><span class="s">@"\\"</span><span class="p">))</span>
+<span class="w">        </span><span class="n">found</span><span class="p">.</span><span class="n">Add</span><span class="p">(</span><span class="k">new</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span><span class="w"> </span><span class="n">file</span><span class="p">,</span><span class="w"> </span><span class="n">key</span><span class="p">,</span><span class="w"> </span><span class="s">"檔案分享"</span><span class="p">,</span><span class="w"> </span><span class="k">value</span><span class="p">.</span><span class="n">TrimEnd</span><span class="p">(</span><span class="sc">'\\'</span><span class="p">)));</span>
+<span class="w">    </span><span class="k">else</span><span class="w"> </span><span class="nf">if</span><span class="w"> </span><span class="p">(</span><span class="n">key</span><span class="p">.</span><span class="n">EndsWith</span><span class="p">(</span><span class="s">"Smtp:Host"</span><span class="p">))</span>
+<span class="w">        </span><span class="n">found</span><span class="p">.</span><span class="n">Add</span><span class="p">(</span><span class="k">new</span><span class="p">(</span><span class="n">comp</span><span class="p">,</span><span class="w"> </span><span class="n">file</span><span class="p">,</span><span class="w"> </span><span class="n">key</span><span class="p">,</span><span class="w"> </span><span class="s">"SMTP"</span><span class="p">,</span><span class="w"> </span><span class="k">value</span><span class="p">));</span>
+<span class="p">}</span>
+
+<span class="k">record</span><span class="w"> </span><span class="nf">Link</span><span class="p">(</span><span class="kt">string</span><span class="w"> </span><span class="n">Comp</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="n">File</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="n">Key</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="n">Kind</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="n">Target</span><span class="p">);</span>
+<span class="k">record</span><span class="w"> </span><span class="nf">Job</span><span class="p">(</span><span class="kt">string</span><span class="w"> </span><span class="n">Schedule</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="n">Program</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="n">Comp</span><span class="p">,</span><span class="w"> </span><span class="kt">bool</span><span class="w"> </span><span class="n">Disabled</span><span class="p">,</span><span class="w"> </span><span class="kt">bool</span><span class="w"> </span><span class="n">InDeploy</span><span class="p">,</span><span class="w"> </span><span class="kt">bool</span><span class="w"> </span><span class="n">Exists</span><span class="p">);</span>
+</code></pre></div>
+
+<p>在示範資料夾上執行（.NET SDK 8.0.134，Ubuntu 24.04）：</p>
+<div class="hl"><pre><span></span><code>$ dotnet run --project SystemMap -- legacy /opt/shop
+== 設定檔：這些元件連到哪裡（密碼不輸出） ==
+batch/ReportJob 資料庫   10.0.0.15/shop                  ← ReportJob.exe.config Shop
+batch/ReportJob 資料庫   10.0.0.15/shop_archive          ← ReportJob.exe.config Archive
+batch/ReportJob FTP      ftp.partner-logistics.example   ← ReportJob.exe.config UploadTarget
+scripts         資料庫   10.0.0.12/shop                  ← .env DB_HOST
+scripts         API      supplier-api.example            ← .env SUPPLIER_API
+web             SMTP     smtp.mailhost.example           ← appsettings.json Smtp:Host
+web             API      api.pay-gateway.example         ← appsettings.json Payment:ApiBase
+web             檔案分享 \\nas01\shop_uploads            ← appsettings.json Upload:Root
+web             資料庫   10.0.0.15/shop                  ← appsettings.Production.json ConnectionStrings:Default
+
+== 排程 ==
+30 2 * * *    啟用    /opt/shop/scripts/sync_stock.sh
+0 7 * * 1     啟用    /opt/shop/batch/ReportJob/ReportJob.exe
+*/10 * * * *  啟用    /home/ken/tools/push_line.php
+0 3 * * *     已註解  /opt/shop/scripts/cleanup_orders.sh
+
+== 待確認 ==
+1. cron/crontab.txt：MAILTO 是空的，排程失敗不會寄信給任何人
+2. web/appsettings.json 的 ConnectionStrings:Default 指向 10.0.0.12/shop，但被 appsettings.Production.json 覆寫成 10.0.0.15/shop
+3. 資料庫 shop 出現在不同主機：10.0.0.15（batch/ReportJob、web）、10.0.0.12（scripts）
+4. 排程 push_line.php 放在 /home/ken/tools，不在 /opt/shop 底下
+5. 排程 cleanup_orders.sh 被註解掉了：是停用，還是暫停後忘了打開？
+
+已輸出 system-map.mmd
+</code></pre></div>
+
+<p>輸出最有用的是最後的「待確認」。逐條看：</p>
+<p><strong>第 2、3 條：資料庫在哪一台？</strong>網站的 <code>appsettings.json</code> 寫的是 <code>10.0.0.12</code>，但正式環境的 <code>appsettings.Production.json</code> 把它覆寫成 <code>10.0.0.15</code>。報表程式也連 <code>10.0.0.15</code>。只有 <code>scripts/.env</code> 還寫著 <code>10.0.0.12</code>。</p>
+<p>最可能的解釋是：系統搬過一次資料庫主機，網站和報表程式改了，腳本沒改。但這只是推測，現在還不知道 <code>10.0.0.12</code> 是否還開著。下午查資料庫時，會再找到一個線索。</p>
+<p>另外要注意：ASP.NET Core 實際使用哪一份設定，取決於主機上的 <code>ASPNETCORE_ENVIRONMENT</code>（沒設定時預設是 Production）；而環境變數本身也能覆寫設定檔，例如 <code>ConnectionStrings__Default</code>。這支程式只讀檔案，主機上的環境變數、systemd 或 IIS 的設定要另外看。</p>
+<p><strong>第 4 條：排程跑的程式放在個人目錄。</strong>每 10 分鐘執行一次的 <code>push_line.php</code> 放在 <code>/home/ken/tools</code>，不在 <code>/opt/shop</code> 底下，所以 rsync 也不會複製到它。從檔名和頻率看，它很可能就是老闆想改文字的 LINE 出貨通知。</p>
+<p>如果哪天有人整理主機、把前任工程師的帳號連同家目錄刪掉，這個通知就會停。在確認之前，那個帳號先不要刪。</p>
+<p><strong>第 1 條：<code>MAILTO=""</code>。</strong>cron 預設會把排程產生的輸出（包含錯誤訊息）寄給該帳號，前提是主機能寄信；設成空字串就是不寄。也就是說，上面任何一個排程失敗，都不會有人知道。</p>
+<p><strong>第 5 條：被註解掉的排程。</strong><code>cleanup_orders.sh</code> 看名字是清理訂單。被註解掉，可能是刻意停用，也可能是某次出問題時暫停，之後忘了打開。這要問人，不能猜。</p>
+<h2>下午：資料庫裡哪些表還活著、誰跟誰有關</h2>
+<p>設定檔告訴我們系統連到 <code>10.0.0.15</code> 的 <code>shop</code>。接下來看裡面有什麼。</p>
+<h3>哪些表還活著</h3>
+<p>資料表的名稱看不出它還有沒有在用。比較可靠的方法是看兩件事：有幾筆資料，最新一筆是什麼時候。</p>
+<p>一張一張查太慢，可以讓 MariaDB／MySQL 從 <code>information_schema</code> 產生查詢：每張表、每個日期欄位各產生一段 <code>COUNT(*)</code> 和 <code>MAX()</code>，用 <code>UNION ALL</code> 接起來。</p>
+<div class="hl"><pre><span></span><code><span class="k">SET</span><span class="w"> </span><span class="k">SESSION</span><span class="w"> </span><span class="n">group_concat_max_len</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1000000</span><span class="p">;</span>
+<span class="k">SELECT</span><span class="w"> </span><span class="n">CONCAT</span><span class="p">(</span><span class="n">GROUP_CONCAT</span><span class="p">(</span>
+<span class="w">  </span><span class="n">CONCAT</span><span class="p">(</span><span class="s1">'SELECT '''</span><span class="p">,</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="k">TABLE_NAME</span><span class="p">,</span><span class="w"> </span><span class="s1">''' AS table_name, '</span><span class="p">,</span>
+<span class="w">         </span><span class="n">IFNULL</span><span class="p">(</span><span class="n">CONCAT</span><span class="p">(</span><span class="s1">''''</span><span class="p">,</span><span class="w"> </span><span class="k">c</span><span class="p">.</span><span class="k">COLUMN_NAME</span><span class="p">,</span><span class="w"> </span><span class="s1">''''</span><span class="p">),</span><span class="w"> </span><span class="s1">'NULL'</span><span class="p">),</span><span class="w"> </span><span class="s1">' AS date_column, '</span><span class="p">,</span>
+<span class="w">         </span><span class="s1">'COUNT(*) AS row_count, '</span><span class="p">,</span>
+<span class="w">         </span><span class="n">IFNULL</span><span class="p">(</span><span class="n">CONCAT</span><span class="p">(</span><span class="s1">'MAX(`'</span><span class="p">,</span><span class="w"> </span><span class="k">c</span><span class="p">.</span><span class="k">COLUMN_NAME</span><span class="p">,</span><span class="w"> </span><span class="s1">'`)'</span><span class="p">),</span><span class="w"> </span><span class="s1">'NULL'</span><span class="p">),</span><span class="w"> </span><span class="s1">' AS latest '</span><span class="p">,</span>
+<span class="w">         </span><span class="s1">'FROM `'</span><span class="p">,</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="k">TABLE_NAME</span><span class="p">,</span><span class="w"> </span><span class="s1">'`'</span><span class="p">)</span>
+<span class="w">  </span><span class="k">ORDER</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="k">TABLE_NAME</span><span class="p">,</span><span class="w"> </span><span class="k">c</span><span class="p">.</span><span class="k">COLUMN_NAME</span><span class="w"> </span><span class="n">SEPARATOR</span><span class="w"> </span><span class="s1">'\nUNION ALL '</span><span class="p">),</span><span class="w"> </span><span class="s1">';'</span><span class="p">)</span>
+<span class="k">FROM</span><span class="w"> </span><span class="n">information_schema</span><span class="p">.</span><span class="n">TABLES</span><span class="w"> </span><span class="n">t</span>
+<span class="k">LEFT</span><span class="w"> </span><span class="k">JOIN</span><span class="w"> </span><span class="n">information_schema</span><span class="p">.</span><span class="n">COLUMNS</span><span class="w"> </span><span class="k">c</span>
+<span class="w">  </span><span class="k">ON</span><span class="w"> </span><span class="k">c</span><span class="p">.</span><span class="n">TABLE_SCHEMA</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="n">TABLE_SCHEMA</span><span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="k">c</span><span class="p">.</span><span class="k">TABLE_NAME</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="k">TABLE_NAME</span>
+<span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="k">c</span><span class="p">.</span><span class="n">DATA_TYPE</span><span class="w"> </span><span class="k">IN</span><span class="w"> </span><span class="p">(</span><span class="s1">'date'</span><span class="p">,</span><span class="w"> </span><span class="s1">'datetime'</span><span class="p">,</span><span class="w"> </span><span class="s1">'timestamp'</span><span class="p">)</span>
+<span class="k">WHERE</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="n">TABLE_SCHEMA</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">'shop'</span><span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="n">TABLE_TYPE</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">'BASE TABLE'</span><span class="p">;</span>
+</code></pre></div>
+
+<p>先產生查詢，再執行它（MariaDB 10.11.14）：</p>
+<div class="hl"><pre><span></span><code>$ mariadb -N -r shop &lt; gen_activity.sql &gt; activity.sql
+$ head -3 activity.sql
+SELECT 'coupons' AS table_name, 'created_at' AS date_column, COUNT(*) AS row_count, MAX(`created_at`) AS latest FROM `coupons`
+UNION ALL SELECT 'customers' AS table_name, 'created_at' AS date_column, COUNT(*) AS row_count, MAX(`created_at`) AS latest FROM `customers`
+UNION ALL SELECT 'line_push_queue' AS table_name, 'created_at' AS date_column, COUNT(*) AS row_count, MAX(`created_at`) AS latest FROM `line_push_queue`
+$ mariadb --table shop &lt; activity.sql
++-----------------+-------------+-----------+---------------------+
+| table_name      | date_column | row_count | latest              |
++-----------------+-------------+-----------+---------------------+
+| coupons         | created_at  |         0 | NULL                |
+| customers       | created_at  |       300 | 2026-11-21 00:00:00 |
+| line_push_queue | created_at  |      1500 | 2026-11-26 21:50:00 |
+| line_push_queue | sent_at     |      1500 | 2026-11-26 22:00:00 |
+| orders          | created_at  |      4200 | 2026-11-26 21:47:00 |
+| orders_bak_2023 | created_at  |      1455 | 2022-12-31 21:00:00 |
+| order_items     | NULL        |      9800 | NULL                |
+| products        | updated_at  |        80 | 2026-11-20 15:12:00 |
+| stock_sync_log  | run_at      |       880 | 2023-08-19 02:30:00 |
++-----------------+-------------+-----------+---------------------+
+</code></pre></div>
+
+<p><code>COUNT(*)</code> 在大資料表上會掃整張表。正式資料庫最好在離峰時段跑，或者在備份還原出來的資料庫上跑。</p>
+<p>這張表可以讀出幾件事：</p>
+<ul>
+<li><strong><code>coupons</code> 是 0 筆。</strong>老闆想「打開」的優惠券功能，從來沒有人用過。資料表在，不代表功能是完整、測試過的；這要列進待確認，打開之前要當成新功能來測。</li>
+<li><strong><code>orders_bak_2023</code> 停在 2022-12-31。</strong>看名字和日期，像是某次手動備份的訂單。它沒有在更新，但先不要刪，標記起來就好。</li>
+<li><strong><code>order_items</code> 沒有日期欄位</strong>，看不出活不活著。這種表要看它跟誰關聯，下一段處理。</li>
+<li><strong><code>stock_sync_log</code> 停在 2023-08-19。</strong></li>
+</ul>
+<p>最後這一條要和上午的結果放在一起看：寫這張紀錄的應該是每天凌晨 2:30 的 <code>sync_stock.sh</code>，而它的 <code>.env</code> 正好指向舊的 <code>10.0.0.12</code>。</p>
+<p><code>products</code> 的最新更新時間是最近的，看起來很正常。但 <code>MAX()</code> 只看最新一筆，再查一次「最後一次同步之後，有幾個商品被更新過」：</p>
+<div class="hl"><pre><span></span><code>$ mariadb --table shop -e "SELECT COUNT(*) AS total, SUM(updated_at &gt; '2023-08-19 02:30:00') AS updated_after_last_sync FROM products;"
++-------+-------------------------+
+| total | updated_after_last_sync |
++-------+-------------------------+
+|    80 |                       3 |
++-------+-------------------------+
+</code></pre></div>
+
+<p>80 個商品裡只有 3 個在那之後被更新過，比較像是有人在後台手動改的。推測是：庫存同步從 2023 年 8 月起，可能一直寫到舊主機，或是一直在失敗；而 <code>MAILTO</code> 是空的，所以沒人收到通知。</p>
+<p>這仍然是推測。要確認，得登入 <code>10.0.0.12</code> 看它還在不在、上面的 <code>stock_sync_log</code> 最後一筆是什麼時候，再看 <code>/var/log/sync_stock.log</code>。這些都列進待確認清單。</p>
+<h3>誰跟誰有關</h3>
+<p>外包做的系統常常沒有宣告外鍵（foreign key）。關聯只存在程式碼裡，資料庫本身看不出來。</p>
+<p>不過欄位命名通常有規律：<code>customer_id</code> 大多指向 <code>customers</code>。下面這段 SQL 找出所有 <code>_id</code> 結尾的欄位，猜它指向哪張表，並標出有沒有宣告外鍵：</p>
+<div class="hl"><pre><span></span><code><span class="k">SELECT</span><span class="w"> </span><span class="k">c</span><span class="p">.</span><span class="k">TABLE_NAME</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="k">table_name</span><span class="p">,</span><span class="w"> </span><span class="k">c</span><span class="p">.</span><span class="k">COLUMN_NAME</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="k">column_name</span><span class="p">,</span>
+<span class="w">       </span><span class="n">IFNULL</span><span class="p">(</span><span class="n">t</span><span class="p">.</span><span class="k">TABLE_NAME</span><span class="p">,</span><span class="w"> </span><span class="s1">'?'</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">guessed_target</span><span class="p">,</span>
+<span class="w">       </span><span class="k">IF</span><span class="p">(</span><span class="n">k</span><span class="p">.</span><span class="k">CONSTRAINT_NAME</span><span class="w"> </span><span class="k">IS</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w"> </span><span class="s1">'no'</span><span class="p">,</span><span class="w"> </span><span class="s1">'yes'</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">has_fk</span>
+<span class="k">FROM</span><span class="w"> </span><span class="n">information_schema</span><span class="p">.</span><span class="n">COLUMNS</span><span class="w"> </span><span class="k">c</span>
+<span class="k">LEFT</span><span class="w"> </span><span class="k">JOIN</span><span class="w"> </span><span class="n">information_schema</span><span class="p">.</span><span class="n">TABLES</span><span class="w"> </span><span class="n">t</span>
+<span class="w">  </span><span class="k">ON</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="n">TABLE_SCHEMA</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">c</span><span class="p">.</span><span class="n">TABLE_SCHEMA</span>
+<span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="k">TABLE_NAME</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CONCAT</span><span class="p">(</span><span class="k">LEFT</span><span class="p">(</span><span class="k">c</span><span class="p">.</span><span class="k">COLUMN_NAME</span><span class="p">,</span><span class="w"> </span><span class="k">CHAR_LENGTH</span><span class="p">(</span><span class="k">c</span><span class="p">.</span><span class="k">COLUMN_NAME</span><span class="p">)</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">3</span><span class="p">),</span><span class="w"> </span><span class="s1">'s'</span><span class="p">)</span>
+<span class="k">LEFT</span><span class="w"> </span><span class="k">JOIN</span><span class="w"> </span><span class="n">information_schema</span><span class="p">.</span><span class="n">KEY_COLUMN_USAGE</span><span class="w"> </span><span class="n">k</span>
+<span class="w">  </span><span class="k">ON</span><span class="w"> </span><span class="n">k</span><span class="p">.</span><span class="n">TABLE_SCHEMA</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">c</span><span class="p">.</span><span class="n">TABLE_SCHEMA</span><span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="n">k</span><span class="p">.</span><span class="k">TABLE_NAME</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">c</span><span class="p">.</span><span class="k">TABLE_NAME</span>
+<span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="n">k</span><span class="p">.</span><span class="k">COLUMN_NAME</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">c</span><span class="p">.</span><span class="k">COLUMN_NAME</span><span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="n">k</span><span class="p">.</span><span class="n">REFERENCED_TABLE_NAME</span><span class="w"> </span><span class="k">IS</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span>
+<span class="k">WHERE</span><span class="w"> </span><span class="k">c</span><span class="p">.</span><span class="n">TABLE_SCHEMA</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">'shop'</span><span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="k">c</span><span class="p">.</span><span class="k">COLUMN_NAME</span><span class="w"> </span><span class="k">LIKE</span><span class="w"> </span><span class="s1">'%\_id'</span>
+<span class="k">ORDER</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="k">c</span><span class="p">.</span><span class="k">TABLE_NAME</span><span class="p">,</span><span class="w"> </span><span class="k">c</span><span class="p">.</span><span class="k">COLUMN_NAME</span><span class="p">;</span>
+</code></pre></div>
+
+<div class="hl"><pre><span></span><code>$ mariadb --table shop &lt; find_relations.sql
++-----------------+-------------+----------------+--------+
+| table_name      | column_name | guessed_target | has_fk |
++-----------------+-------------+----------------+--------+
+| line_push_queue | order_id    | orders         | no     |
+| orders          | customer_id | customers      | yes    |
+| orders_bak_2023 | customer_id | customers      | no     |
+| order_items     | order_id    | orders         | yes    |
+| order_items     | product_id  | products       | no     |
++-----------------+-------------+----------------+--------+
+</code></pre></div>
+
+<p>「加 s 變複數」的猜法很粗略：<code>category_id</code> 對不到 <code>categories</code>，就會顯示 <code>?</code>，要人工補。猜出來的關聯也要驗證一次：拿資料去 JOIN，看有沒有對不到的。</p>
+<div class="hl"><pre><span></span><code><span class="k">SELECT</span><span class="w"> </span><span class="s1">'order_items.product_id'</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">guessed_relation</span><span class="p">,</span><span class="w"> </span><span class="k">COUNT</span><span class="p">(</span><span class="o">*</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">rows_checked</span><span class="p">,</span>
+<span class="w">       </span><span class="k">SUM</span><span class="p">(</span><span class="n">p</span><span class="p">.</span><span class="n">id</span><span class="w"> </span><span class="k">IS</span><span class="w"> </span><span class="k">NULL</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">not_found</span>
+<span class="k">FROM</span><span class="w"> </span><span class="n">order_items</span><span class="w"> </span><span class="n">oi</span><span class="w"> </span><span class="k">LEFT</span><span class="w"> </span><span class="k">JOIN</span><span class="w"> </span><span class="n">products</span><span class="w"> </span><span class="n">p</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">p</span><span class="p">.</span><span class="n">id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">oi</span><span class="p">.</span><span class="n">product_id</span>
+<span class="k">UNION</span><span class="w"> </span><span class="k">ALL</span>
+<span class="k">SELECT</span><span class="w"> </span><span class="s1">'line_push_queue.order_id'</span><span class="p">,</span><span class="w"> </span><span class="k">COUNT</span><span class="p">(</span><span class="o">*</span><span class="p">),</span><span class="w"> </span><span class="k">SUM</span><span class="p">(</span><span class="n">o</span><span class="p">.</span><span class="n">id</span><span class="w"> </span><span class="k">IS</span><span class="w"> </span><span class="k">NULL</span><span class="p">)</span>
+<span class="k">FROM</span><span class="w"> </span><span class="n">line_push_queue</span><span class="w"> </span><span class="n">q</span><span class="w"> </span><span class="k">LEFT</span><span class="w"> </span><span class="k">JOIN</span><span class="w"> </span><span class="n">orders</span><span class="w"> </span><span class="n">o</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">o</span><span class="p">.</span><span class="n">id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">q</span><span class="p">.</span><span class="n">order_id</span><span class="p">;</span>
+</code></pre></div>
+
+<div class="hl"><pre><span></span><code>$ mariadb --table shop &lt; orphans.sql
++--------------------------+--------------+-----------+
+| guessed_relation         | rows_checked | not_found |
++--------------------------+--------------+-----------+
+| order_items.product_id   |         9800 |         0 |
+| line_push_queue.order_id |         1500 |         0 |
++--------------------------+--------------+-----------+
+</code></pre></div>
+
+<p>全部對得上，這兩個猜測可以先當成成立。<code>line_push_queue</code> 每筆都對應一張訂單，最新一筆是昨晚，和上午找到的 <code>push_line.php</code> 對得起來：LINE 出貨通知很可能是「訂單出貨時寫一筆進 <code>line_push_queue</code>，排程每 10 分鐘撈出來發送」。要改通知文字，大概要改的是那支放在個人目錄、不在版控裡的 PHP。</p>
+<p>SQL Server 也可以用同樣的思路查，<code>sys.tables</code>、<code>sys.columns</code>、<code>sys.foreign_keys</code> 分別對應上面用到的資訊。這部分本文沒有實際執行，就不附語法。</p>
+<h2>傍晚：畫成一張圖，附上待確認清單</h2>
+<p>掃描程式輸出的 <code>system-map.mmd</code> 直接就是一張 Mermaid 圖。下面這張沒有手動修改，是程式輸出的原樣：</p>
+<figure><img src="fig-2.svg" alt="掃描程式輸出的架構圖（未手動修改）：實線是設定檔裡找得到的連線，虛線是放在部署路徑外、看不到內容的排程" loading="lazy"><figcaption>掃描程式輸出的架構圖（未手動修改）：實線是設定檔裡找得到的連線，虛線是放在部署路徑外、看不到內容的排程</figcaption></figure>
+<p>只看這張圖就能回答老闆的第一個問題：系統有網站、每週報表、庫存同步三塊，加上一個藏在個人目錄的 LINE 通知；連到兩台資料庫主機、一個 NAS、一個 FTP、三個外部服務。</p>
+<p>但圖只是一半。另一半是推不出來、必須問人的部分。這份清單比圖更重要，因為它決定下週改功能前要先處理什麼：</p>
+<figure><img src="fig-3.png" alt="交給老闆的待確認清單：每一條都寫上從哪裡看到、怎麼確認" loading="lazy"><figcaption>交給老闆的待確認清單：每一條都寫上從哪裡看到、怎麼確認</figcaption></figure>
+<p>回到老闆的問題，答案變得很具體：</p>
+<ul>
+<li><strong>打開優惠券</strong>：資料表是空的，功能從沒被用過。要當成新功能來測，不是「打開開關」而已。</li>
+<li><strong>改 LINE 通知文字</strong>：要改的程式很可能不在 repo 裡，而是在前任工程師的個人目錄。先把它搬到部署路徑、放進版控，再改。</li>
+<li><strong>在這之前</strong>：先確認第 1 條。如果庫存真的三年多沒有自動同步，這比前兩件事都急。</li>
+</ul>
+<p>這一天沒有修改任何東西，但下週要改功能時，已經知道會碰到哪裡、哪些地方要先問清楚。</p>
+<blockquote>
+<p>本文的 C# 掃描程式（.NET SDK 8.0.134，Ubuntu 24.04）與 MariaDB 10.11.14 上的四段 SQL 都實際執行過，文中的輸出與實際輸出相同；示範資料夾與資料庫是另外寫程式產生的，不是真實系統。從正式主機複製檔案的指令、Windows 工作排程器與 SQL Server 相關的部分沒有實際執行。</p>
+</blockquote>
+<h2>學到什麼</h2>
+<ul>
+<li>接手第一天要回答的是「有什麼、連到誰、什麼時候自己動、哪些還活著」。這些答案在設定檔、排程和資料庫裡，比讀程式碼快。</li>
+<li>以正式主機為準，不以 repo 為準。沒進版控的排程與腳本，往往就是最重要、也最危險的那一塊。</li>
+<li>設定檔要看「實際生效」的那一份：環境專屬的設定檔、環境變數都可能覆寫預設值。</li>
+<li>看資料表有沒有在用，看筆數和最新一筆的時間；只看 <code>MAX()</code> 會被少數幾筆手動修改騙過。</li>
+<li>推得出來的畫成圖，推不出來的列成清單去問人。清單比圖更重要。</li>
+</ul>
+<p>如果你手上也有一套前任工程師聯絡不上、沒有文件的系統，問達工作室可以先替它做一次這樣的盤點，讓你在動手改之前，知道它到底長什麼樣子。</p>
+<div class="post-end note">問達工作室｜系統救火與自動化・<a href="../../">服務說明</a>・<a href="../../blog/">更多文章</a></div>
+</article>
+</main>
+<footer class="wrap">© 2026 問達工作室・<a href="../../blog/feed.xml">RSS</a></footer>
+<script>(function(){var b=document.querySelector(".theme-toggle"),r=document.documentElement;function sync(){b.setAttribute("aria-pressed",r.getAttribute("data-theme")==="dark"?"true":"false")}sync();b.addEventListener("click",function(){var n=r.getAttribute("data-theme")==="dark"?"light":"dark";r.setAttribute("data-theme",n);try{localStorage.setItem("theme",n)}catch(e){}sync()})})();</script>
+</body>
+</html>
