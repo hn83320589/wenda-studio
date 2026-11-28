@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>批次跑到一半中斷，按下重跑後入帳金額多了 65%：讓批次「重跑幾次都一樣」｜問達工作室</title>
+<meta name="description" content="夜間匯入批次跑到一半斷線，隔天早上有人按了重跑，結果一半的訂單被入帳兩次、客人收到兩封通知。這篇用一個示範情境，說明怎麼查出重複的範圍、怎麼清掉，以及怎麼把批次改成可以安全重跑：唯一鍵、分批交易、重算取代累加、通知另外寄、同時只跑一個。程式與 SQL 都實際執行過。">
+<meta property="og:title" content="批次跑到一半中斷，按下重跑後入帳金額多了 65%：讓批次「重跑幾次都一樣」｜問達工作室">
+<meta property="og:description" content="夜間匯入批次跑到一半斷線，隔天早上有人按了重跑，結果一半的訂單被入帳兩次、客人收到兩封通知。這篇用一個示範情境，說明怎麼查出重複的範圍、怎麼清掉，以及怎麼把批次改成可以安全重跑：唯一鍵、分批交易、重算取代累加、通知另外寄、同時只跑一個。程式與 SQL 都實際執行過。">
+<meta property="og:type" content="article">
+<meta name="color-scheme" content="light dark">
+<script>(function(){var t=null;try{t=localStorage.getItem("theme")}catch(e){}if(t!=="light"&&t!=="dark"){t=window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"}document.documentElement.setAttribute("data-theme",t)})();</script>
+<meta property="og:image" content="https://hn83320589.github.io/wenda-studio/blog/batch-safe-rerun/fig-1.png">
+<link rel="alternate" type="application/rss+xml" title="問達工作室文章" href="../../blog/feed.xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<style>
+:root{color-scheme:light;--mist:#FFFFFF;--pane:#DCEAE7;--edge:#2F7F78;--ink:#1B2B3A;--mute:#5A6B75;--amber:#C9861F;--white:#FFFFFF;
+--edge-rgb:47 127 120;--pane-rgb:220 234 231;--amber-rgb:201 134 31;
+--hand:"LXGW WenKai TC","Kaiti TC","BiauKai",serif;--sans:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+--mono:"JetBrains Mono","SFMono-Regular",Consolas,monospace}
+:root[data-theme="dark"]{color-scheme:dark;--mist:#0F171D;--pane:#1A2832;--edge:#6CC0B5;--ink:#E4ECEE;--mute:#9DAEB6;--amber:#E2A84E;--white:#15212A;
+--edge-rgb:108 192 181;--pane-rgb:40 62 74;--amber-rgb:226 168 78}
+*{box-sizing:border-box}
+body{margin:0;background:var(--mist);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.85;-webkit-font-smoothing:antialiased}
+a{color:var(--edge);text-underline-offset:3px}
+:focus-visible{outline:3px solid var(--amber);outline-offset:3px}
+.wrap{width:min(760px,100% - 40px);margin-inline:auto}
+.top{display:flex;justify-content:space-between;align-items:center;padding:22px 0;width:min(1080px,100% - 40px);margin-inline:auto}
+.brand{font-family:var(--hand);font-weight:700;font-size:1.2rem;color:var(--ink);text-decoration:none}
+.top nav a{margin-left:20px;color:var(--ink);text-decoration:none;font-size:.95rem}
+.top nav a:hover{color:var(--edge)}
+h1{font-family:var(--hand);font-size:clamp(1.9rem,4vw,2.6rem);line-height:1.3;margin:24px 0 10px}
+h2{font-family:var(--hand);font-size:1.55rem;line-height:1.4;margin:48px 0 12px}
+h3{font-size:1.12rem;margin:32px 0 8px}
+.meta{color:var(--mute);font-size:.92rem;margin-bottom:36px}
+.meta span+span::before{content:"／";margin:0 6px;color:rgb(var(--edge-rgb) / .5)}
+article p,article li{max-width:40em}
+article img{max-width:100%;height:auto}
+figure{margin:32px 0;text-align:center}
+figure img{background:#FFFFFF;border:1px solid rgb(var(--edge-rgb) / .3);border-radius:8px;padding:12px}
+figcaption{color:var(--mute);font-size:.9rem;margin-top:8px}
+code{font-family:var(--mono);font-size:.88em;background:rgb(var(--pane-rgb) / .8);padding:1px 5px;border-radius:4px}
+pre{background:#1B2B3A;border:1px solid rgb(var(--edge-rgb) / .2);color:#E6EEF0;padding:18px 20px;border-radius:8px;overflow-x:auto;line-height:1.6;font-size:.88rem}
+pre code{background:none;padding:0;color:inherit;font-size:inherit}
+blockquote{margin:24px 0;padding:4px 20px;border-left:3px solid var(--amber);background:rgb(var(--amber-rgb) / .08);color:var(--ink)}
+table{border-collapse:collapse;width:100%;margin:24px 0;font-size:.95rem;background:var(--white)}
+th,td{border:1px solid rgb(var(--edge-rgb) / .3);padding:8px 12px;text-align:left;vertical-align:top}
+th{background:var(--pane)}
+.note{color:var(--mute);font-size:.9rem}
+.post-end{margin:56px 0 24px;padding-top:24px;border-top:1px dashed rgb(var(--edge-rgb) / .45)}
+.list{list-style:none;padding:0;margin:0}
+.list li{padding:22px 0;border-bottom:1px solid rgb(var(--edge-rgb) / .22)}
+.list a.t{font-size:1.15rem;font-weight:700;color:var(--ink);text-decoration:none}
+.list a.t:hover{color:var(--edge)}
+.list .d{color:var(--mute);font-size:.88rem;display:block;margin-bottom:4px}
+.list p{margin:6px 0 0;color:var(--mute)}
+footer{padding:40px 0 56px;color:var(--mute);font-size:.88rem}
+.top-right{display:flex;align-items:center}
+.theme-toggle{display:inline-grid;place-items:center;width:36px;height:36px;margin-left:16px;border:1px solid rgb(var(--edge-rgb) / .35);border-radius:50%;background:transparent;color:var(--ink);cursor:pointer}
+.theme-toggle:hover{border-color:var(--edge);color:var(--edge)}
+.theme-toggle svg{width:17px;height:17px}.theme-toggle .moon{display:none}
+:root[data-theme="dark"] .theme-toggle .sun{display:none}:root[data-theme="dark"] .theme-toggle .moon{display:block}
+@media (prefers-reduced-motion:no-preference){body{transition:background-color .25s ease,color .25s ease}}
+@media (max-width:600px){body{font-size:16px}.top nav a{margin-left:12px}.theme-toggle{margin-left:12px}}
+pre { line-height: 125%; }
+td.linenos .normal { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }
+span.linenos { color: inherit; background-color: transparent; padding-left: 5px; padding-right: 5px; }
+td.linenos .special { color: #000000; background-color: #ffffc0; padding-left: 5px; padding-right: 5px; }
+span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 5px; padding-right: 5px; }
+.hl .hll { background-color: #49483e }
+.hl { background: #272822; color: #F8F8F2 }
+.hl .c { color: #959077 } /* Comment */
+.hl .err { color: #ED007E; background-color: #1E0010 } /* Error */
+.hl .esc { color: #F8F8F2 } /* Escape */
+.hl .g { color: #F8F8F2 } /* Generic */
+.hl .k { color: #66D9EF } /* Keyword */
+.hl .l { color: #AE81FF } /* Literal */
+.hl .n { color: #F8F8F2 } /* Name */
+.hl .o { color: #FF4689 } /* Operator */
+.hl .x { color: #F8F8F2 } /* Other */
+.hl .p { color: #F8F8F2 } /* Punctuation */
+.hl .ch { color: #959077 } /* Comment.Hashbang */
+.hl .cm { color: #959077 } /* Comment.Multiline */
+.hl .cp { color: #959077 } /* Comment.Preproc */
+.hl .cpf { color: #959077 } /* Comment.PreprocFile */
+.hl .c1 { color: #959077 } /* Comment.Single */
+.hl .cs { color: #959077 } /* Comment.Special */
+.hl .gd { color: #FF4689 } /* Generic.Deleted */
+.hl .ge { color: #F8F8F2; font-style: italic } /* Generic.Emph */
+.hl .ges { color: #F8F8F2; font-weight: bold; font-style: italic } /* Generic.EmphStrong */
+.hl .gr { color: #FF4689 } /* Generic.Error */
+.hl .gh { color: #F8F8F2 } /* Generic.Heading */
+.hl .gi { color: #A6E22E } /* Generic.Inserted */
+.hl .go { color: #66D9EF } /* Generic.Output */
+.hl .gp { color: #FF4689; font-weight: bold } /* Generic.Prompt */
+.hl .gs { color: #F8F8F2; font-weight: bold } /* Generic.Strong */
+.hl .gu { color: #959077 } /* Generic.Subheading */
+.hl .gt { color: #66D9EF } /* Generic.Traceback */
+.hl .kc { color: #66D9EF } /* Keyword.Constant */
+.hl .kd { color: #66D9EF } /* Keyword.Declaration */
+.hl .kn { color: #FF4689 } /* Keyword.Namespace */
+.hl .kp { color: #66D9EF } /* Keyword.Pseudo */
+.hl .kr { color: #66D9EF } /* Keyword.Reserved */
+.hl .kt { color: #66D9EF } /* Keyword.Type */
+.hl .ld { color: #E6DB74 } /* Literal.Date */
+.hl .m { color: #AE81FF } /* Literal.Number */
+.hl .s { color: #E6DB74 } /* Literal.String */
+.hl .na { color: #A6E22E } /* Name.Attribute */
+.hl .nb { color: #A6E22E } /* Name.Builtin */
+.hl .nc { color: #A6E22E } /* Name.Class */
+.hl .no { color: #66D9EF } /* Name.Constant */
+.hl .nd { color: #A6E22E } /* Name.Decorator */
+.hl .ni { color: #F8F8F2 } /* Name.Entity */
+.hl .ne { color: #A6E22E } /* Name.Exception */
+.hl .nf { color: #A6E22E } /* Name.Function */
+.hl .nl { color: #F8F8F2 } /* Name.Label */
+.hl .nn { color: #F8F8F2 } /* Name.Namespace */
+.hl .nx { color: #A6E22E } /* Name.Other */
+.hl .py { color: #F8F8F2 } /* Name.Property */
+.hl .nt { color: #FF4689 } /* Name.Tag */
+.hl .nv { color: #F8F8F2 } /* Name.Variable */
+.hl .ow { color: #FF4689 } /* Operator.Word */
+.hl .pm { color: #F8F8F2 } /* Punctuation.Marker */
+.hl .w { color: #F8F8F2 } /* Text.Whitespace */
+.hl .mb { color: #AE81FF } /* Literal.Number.Bin */
+.hl .mf { color: #AE81FF } /* Literal.Number.Float */
+.hl .mh { color: #AE81FF } /* Literal.Number.Hex */
+.hl .mi { color: #AE81FF } /* Literal.Number.Integer */
+.hl .mo { color: #AE81FF } /* Literal.Number.Oct */
+.hl .sa { color: #E6DB74 } /* Literal.String.Affix */
+.hl .sb { color: #E6DB74 } /* Literal.String.Backtick */
+.hl .sc { color: #E6DB74 } /* Literal.String.Char */
+.hl .dl { color: #E6DB74 } /* Literal.String.Delimiter */
+.hl .sd { color: #E6DB74 } /* Literal.String.Doc */
+.hl .s2 { color: #E6DB74 } /* Literal.String.Double */
+.hl .se { color: #AE81FF } /* Literal.String.Escape */
+.hl .sh { color: #E6DB74 } /* Literal.String.Heredoc */
+.hl .si { color: #E6DB74 } /* Literal.String.Interpol */
+.hl .sx { color: #E6DB74 } /* Literal.String.Other */
+.hl .sr { color: #E6DB74 } /* Literal.String.Regex */
+.hl .s1 { color: #E6DB74 } /* Literal.String.Single */
+.hl .ss { color: #E6DB74 } /* Literal.String.Symbol */
+.hl .bp { color: #A6E22E } /* Name.Builtin.Pseudo */
+.hl .fm { color: #A6E22E } /* Name.Function.Magic */
+.hl .vc { color: #F8F8F2 } /* Name.Variable.Class */
+.hl .vg { color: #F8F8F2 } /* Name.Variable.Global */
+.hl .vi { color: #F8F8F2 } /* Name.Variable.Instance */
+.hl .vm { color: #F8F8F2 } /* Name.Variable.Magic */
+.hl .il { color: #AE81FF } /* Literal.Number.Integer.Long */.hl pre{background:#1B2B3A}</style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="../../">問達工作室</a>
+  <div class="top-right"><nav aria-label="頁面導覽"><a href="../../">首頁</a><a href="../../blog/">文章</a><a href="../../#contact">預約診斷</a></nav>
+  <button type="button" class="theme-toggle" aria-label="切換深色模式" aria-pressed="false"><svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"/></svg><svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg></button></div>
+</header>
+<main class="wrap">
+<article>
+<h1>批次跑到一半中斷，按下重跑後入帳金額多了 65%：讓批次「重跑幾次都一樣」</h1>
+<div class="meta"><span>2026-11-28</span><span>排程與批次</span></div>
+<p>週五早上九點，會計對不上帳：金流商 11/26 撥款明細的總額是 260 萬出頭，系統裡同一天的入帳卻有 429 萬。客服那邊也接到電話：「我的訂單為什麼寄了兩次『已收到款項』？」</p>
+<p>往回查，事情是這樣的：每天凌晨 1:30 有一支匯入批次，把金流商的撥款明細寫進資料庫、更新訂單的已付金額，再寄通知信給客人。那天凌晨它跑到一半，資料庫連線逾時，排程顯示失敗。早上值班的同事看到紅字，照著以前的習慣在主機上手動執行了一次。這次跑完了，顯示成功。</p>
+<p>問題就出在這次「成功」。</p>
+<p>以下的公司、資料表、檔案、金額與時間都是虛構的示範情境；文中的程式與 SQL 是在 PHP 8.3、MariaDB 10.11 上用示範資料實際執行的，輸出與文中相同。</p>
+<h2>原本的批次：它假設自己一定會從頭跑到尾</h2>
+<p>先看這支批次本身。它不長，也沒有明顯的錯誤，正常的日子每天都跑得很好：</p>
+<div class="hl"><pre><span></span><code><span class="cp">&lt;?php</span>
+<span class="c1">// 原本的匯入批次：每天 01:30 由 cron 執行</span>
+<span class="c1">// 用法：php import_old.php &lt;撥款明細.csv&gt;</span>
+<span class="k">require</span> <span class="no">__DIR__</span> <span class="o">.</span> <span class="s1">'/mailer.php'</span><span class="p">;</span>
+
+<span class="nv">$pdo</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">PDO</span><span class="p">(</span><span class="s1">'mysql:host=localhost;dbname=shop;charset=utf8mb4'</span><span class="p">,</span> <span class="s1">'batch'</span><span class="p">,</span> <span class="s1">'demo'</span><span class="p">,</span>
+    <span class="p">[</span><span class="nx">PDO</span><span class="o">::</span><span class="na">ATTR_ERRMODE</span> <span class="o">=&gt;</span> <span class="nx">PDO</span><span class="o">::</span><span class="na">ERRMODE_EXCEPTION</span><span class="p">]);</span>
+<span class="nv">$crashAt</span> <span class="o">=</span> <span class="p">(</span><span class="nx">int</span><span class="p">)</span> <span class="nb">getenv</span><span class="p">(</span><span class="s1">'CRASH_AT'</span><span class="p">);</span>   <span class="c1">// 示範用：處理到第 N 筆時模擬連線中斷</span>
+
+<span class="nv">$file</span> <span class="o">=</span> <span class="nb">fopen</span><span class="p">(</span><span class="nv">$argv</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="s1">'r'</span><span class="p">);</span>
+<span class="nb">fgetcsv</span><span class="p">(</span><span class="nv">$file</span><span class="p">);</span>                        <span class="c1">// 跳過標題列</span>
+<span class="nv">$count</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+<span class="k">try</span> <span class="p">{</span>
+    <span class="k">while</span> <span class="p">((</span><span class="nv">$r</span> <span class="o">=</span> <span class="nb">fgetcsv</span><span class="p">(</span><span class="nv">$file</span><span class="p">))</span> <span class="o">!==</span> <span class="k">false</span><span class="p">)</span> <span class="p">{</span>
+        <span class="p">[</span><span class="nv">$txn</span><span class="p">,</span> <span class="nv">$orderNo</span><span class="p">,</span> <span class="nv">$amount</span><span class="p">,</span> <span class="nv">$date</span><span class="p">]</span> <span class="o">=</span> <span class="nv">$r</span><span class="p">;</span>
+
+        <span class="nv">$pdo</span><span class="o">-&gt;</span><span class="na">prepare</span><span class="p">(</span><span class="s1">'INSERT INTO payments (txn_id, order_no, amount, settle_date) VALUES (?, ?, ?, ?)'</span><span class="p">)</span>
+            <span class="o">-&gt;</span><span class="na">execute</span><span class="p">([</span><span class="nv">$txn</span><span class="p">,</span> <span class="nv">$orderNo</span><span class="p">,</span> <span class="nv">$amount</span><span class="p">,</span> <span class="nv">$date</span><span class="p">]);</span>
+        <span class="nv">$pdo</span><span class="o">-&gt;</span><span class="na">prepare</span><span class="p">(</span><span class="s1">'UPDATE orders SET paid_amount = paid_amount + ? WHERE order_no = ?'</span><span class="p">)</span>
+            <span class="o">-&gt;</span><span class="na">execute</span><span class="p">([</span><span class="nv">$amount</span><span class="p">,</span> <span class="nv">$orderNo</span><span class="p">]);</span>
+        <span class="nv">$q</span> <span class="o">=</span> <span class="nv">$pdo</span><span class="o">-&gt;</span><span class="na">prepare</span><span class="p">(</span><span class="s1">'SELECT email FROM orders WHERE order_no = ?'</span><span class="p">);</span>
+        <span class="nv">$q</span><span class="o">-&gt;</span><span class="na">execute</span><span class="p">([</span><span class="nv">$orderNo</span><span class="p">]);</span>
+        <span class="nv">$email</span> <span class="o">=</span> <span class="nv">$q</span><span class="o">-&gt;</span><span class="na">fetchColumn</span><span class="p">();</span>
+        <span class="nx">send_mail</span><span class="p">(</span><span class="nv">$pdo</span><span class="p">,</span> <span class="nv">$email</span><span class="p">,</span> <span class="s2">"訂單 </span><span class="si">$orderNo</span><span class="s2"> 已收到款項"</span><span class="p">);</span>
+
+        <span class="nv">$count</span><span class="o">++</span><span class="p">;</span>
+        <span class="k">if</span> <span class="p">(</span><span class="nv">$count</span> <span class="o">===</span> <span class="nv">$crashAt</span><span class="p">)</span> <span class="k">throw</span> <span class="k">new</span> <span class="nx">RuntimeException</span><span class="p">(</span><span class="s1">'（模擬）資料庫連線逾時'</span><span class="p">);</span>
+    <span class="p">}</span>
+<span class="p">}</span> <span class="k">catch</span> <span class="p">(</span><span class="nx">Throwable</span> <span class="nv">$e</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">echo</span> <span class="s2">"匯入中斷：</span><span class="si">{</span><span class="nv">$e</span><span class="o">-&gt;</span><span class="na">getMessage</span><span class="p">()</span><span class="si">}</span><span class="s2">，已處理 </span><span class="si">$count</span><span class="s2"> 筆</span><span class="se">\n</span><span class="s2">"</span><span class="p">;</span>
+    <span class="k">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
+<span class="p">}</span>
+<span class="k">echo</span> <span class="s2">"匯入完成，共 </span><span class="si">$count</span><span class="s2"> 筆</span><span class="se">\n</span><span class="s2">"</span><span class="p">;</span>
+</code></pre></div>
+
+<p>示範用的 <code>send_mail()</code> 只是把信寫進一張 <code>mail_log</code> 表，代表「這封信已經寄到客人信箱」。<code>CRASH_AT</code> 是為了重現事故加的，原本的程式沒有。</p>
+<p>每一筆做三件事：寫一筆入帳明細、把訂單的已付金額<strong>加上</strong>這筆金額、寄一封信。這三件事各自都沒問題，但整支程式藏著三個假設：</p>
+<ol>
+<li><strong>它一定會從第一筆跑到最後一筆。</strong> 沒有交易（transaction），每一筆一寫進去就生效，中斷時已經寫進去的不會退回。</li>
+<li><strong>每一筆只會被處理一次。</strong> <code>payments</code> 表沒有擋同一個交易編號寫兩次，已付金額用「加上去」的方式更新。</li>
+<li><strong>寄出去的信是最後一步，不會出事。</strong> 但信一旦寄出，就收不回來。</li>
+</ol>
+<p>只要有一次中斷再重跑，這三個假設同時破功。用 1,000 筆示範資料重演一次：</p>
+<div class="hl"><pre><span></span><code>$ CRASH_AT=650 php import_old.php settle_20261126.csv
+匯入中斷：（模擬）資料庫連線逾時，已處理 650 筆
+結束代碼：1
+
+$ php import_old.php settle_20261126.csv
+匯入完成，共 1000 筆
+結束代碼：0
+</code></pre></div>
+
+<p>第二次顯示「匯入完成」，結束代碼也是 0，排程監控看起來一切正常。</p>
+<figure><img src="fig-1.svg" alt="重跑會從第一筆重新開始，前 650 筆被處理了兩次" loading="lazy"><figcaption>重跑會從第一筆重新開始，前 650 筆被處理了兩次</figcaption></figure>
+<h2>先查清楚：重複了多少、從哪裡到哪裡</h2>
+<p>發現對不上帳時，第一件事不是動手刪資料，而是先把損害範圍量出來。三個數字就夠：明細有沒有重複、訂單金額有沒有被加錯、通知有沒有重寄。</p>
+<div class="hl"><pre><span></span><code><span class="k">SELECT</span><span class="w"> </span><span class="k">COUNT</span><span class="p">(</span><span class="o">*</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="err">明細筆數</span><span class="p">,</span><span class="w"> </span><span class="k">COUNT</span><span class="p">(</span><span class="k">DISTINCT</span><span class="w"> </span><span class="n">txn_id</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="err">交易數</span><span class="p">,</span><span class="w"> </span><span class="k">SUM</span><span class="p">(</span><span class="n">amount</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="err">入帳金額</span>
+<span class="w">  </span><span class="k">FROM</span><span class="w"> </span><span class="n">payments</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">settle_date</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">'2026-11-26'</span><span class="p">;</span>
+<span class="k">SELECT</span><span class="w"> </span><span class="k">COUNT</span><span class="p">(</span><span class="o">*</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="err">溢收訂單</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">orders</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">paid_amount</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="n">total</span><span class="p">;</span>
+<span class="k">SELECT</span><span class="w"> </span><span class="k">COUNT</span><span class="p">(</span><span class="o">*</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="err">收到兩封以上的客人</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="p">(</span>
+<span class="w">  </span><span class="k">SELECT</span><span class="w"> </span><span class="n">email</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">mail_log</span><span class="w"> </span><span class="k">GROUP</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">email</span><span class="w"> </span><span class="k">HAVING</span><span class="w"> </span><span class="k">COUNT</span><span class="p">(</span><span class="o">*</span><span class="p">)</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="w"> </span><span class="n">t</span><span class="p">;</span>
+</code></pre></div>
+
+<p>再看重複的是哪一段：</p>
+<div class="hl"><pre><span></span><code><span class="k">SELECT</span><span class="w"> </span><span class="k">MIN</span><span class="p">(</span><span class="n">txn_id</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="err">第一筆</span><span class="p">,</span><span class="w"> </span><span class="k">MAX</span><span class="p">(</span><span class="n">txn_id</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="err">最後一筆</span><span class="p">,</span><span class="w"> </span><span class="k">COUNT</span><span class="p">(</span><span class="o">*</span><span class="p">)</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="err">重複的交易數</span>
+<span class="w">  </span><span class="k">FROM</span><span class="w"> </span><span class="p">(</span><span class="k">SELECT</span><span class="w"> </span><span class="n">txn_id</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">payments</span><span class="w"> </span><span class="k">GROUP</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">txn_id</span><span class="w"> </span><span class="k">HAVING</span><span class="w"> </span><span class="k">COUNT</span><span class="p">(</span><span class="o">*</span><span class="p">)</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="w"> </span><span class="n">d</span><span class="p">;</span>
+</code></pre></div>
+
+<figure><img src="fig-2.png" alt="實際執行結果：明細多了 650 筆，重複的剛好是第一次中斷前的那一段" loading="lazy"><figcaption>實際執行結果：明細多了 650 筆，重複的剛好是第一次中斷前的那一段</figcaption></figure>
+<p>（上圖是把 <code>mariadb -t</code> 的表格輸出去掉框線後重排的，數字與實際輸出相同。）</p>
+<p>交易數是 1,000，和金流商檔案的筆數一致，所以檔案本身沒有重複；明細卻有 1,650 筆。重複的範圍是 000001 到 000650，和第一次執行留下的「已處理 650 筆」對得上。原因很清楚：重跑從第一筆重新開始，把已經做過的部分又做了一次。</p>
+<p>金額多出 1,689,100 元，約是正確金額的 65%。這就是開頭會計看到的落差。</p>
+<h2>清理：先刪重複，再重算，最後加鎖</h2>
+<p>清理分三步，前兩步放在同一個交易裡：</p>
+<div class="hl"><pre><span></span><code><span class="k">START</span><span class="w"> </span><span class="k">TRANSACTION</span><span class="p">;</span>
+<span class="c1">-- 1. 同一個交易編號只留最早寫入的那一筆</span>
+<span class="k">DELETE</span><span class="w"> </span><span class="n">p</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">payments</span><span class="w"> </span><span class="n">p</span>
+<span class="w">  </span><span class="k">JOIN</span><span class="w"> </span><span class="n">payments</span><span class="w"> </span><span class="n">k</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">k</span><span class="p">.</span><span class="n">txn_id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">p</span><span class="p">.</span><span class="n">txn_id</span><span class="w"> </span><span class="k">AND</span><span class="w"> </span><span class="n">k</span><span class="p">.</span><span class="n">id</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">p</span><span class="p">.</span><span class="n">id</span><span class="p">;</span>
+<span class="c1">-- 2. 已付金額依明細重算，不要用減的</span>
+<span class="k">UPDATE</span><span class="w"> </span><span class="n">orders</span><span class="w"> </span><span class="n">o</span>
+<span class="w">   </span><span class="k">SET</span><span class="w"> </span><span class="n">paid_amount</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="k">SELECT</span><span class="w"> </span><span class="k">COALESCE</span><span class="p">(</span><span class="k">SUM</span><span class="p">(</span><span class="n">amount</span><span class="p">),</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="k">FROM</span><span class="w"> </span><span class="n">payments</span><span class="w"> </span><span class="n">p</span><span class="w"> </span><span class="k">WHERE</span><span class="w"> </span><span class="n">p</span><span class="p">.</span><span class="n">order_no</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">o</span><span class="p">.</span><span class="n">order_no</span><span class="p">);</span>
+<span class="k">COMMIT</span><span class="p">;</span>
+<span class="c1">-- 3. 加上唯一鍵，之後同一個交易編號寫第二次會直接被資料庫拒絕</span>
+<span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">payments</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">UNIQUE</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="n">uk_payments_txn</span><span class="w"> </span><span class="p">(</span><span class="n">txn_id</span><span class="p">);</span>
+</code></pre></div>
+
+<p>實際執行時，第 1 步刪了 650 列，第 2 步更新了 650 張訂單，第 3 步成功建立唯一鍵。之後再查一次：明細 1,000 筆、2,606,400 元，溢收訂單 0 張。</p>
+<p>幾個要注意的地方：</p>
+<ul>
+<li><strong>第 2 步用「重算」，不用「減回去」。</strong> 減回去要算對每張訂單被多加了幾次，算錯一張就又是一筆錯帳；從明細重新加總，結果只取決於明細本身。前提是 <code>paid_amount</code> 只由這支批次維護；如果有人工調整或退款也會改它，重算前要先把那些來源一起算進去。</li>
+<li><strong>刪之前先備份這兩張表</strong>，或至少把要刪的列匯出一份留存。</li>
+<li><strong>唯一鍵一定要加。</strong> 這是整件事裡最重要的一步：程式可以寫錯、可以被別人改，但資料庫的唯一鍵會一直擋在那裡。</li>
+<li><strong>寄出去的信收不回來。</strong> <code>mail_log</code> 的 650 位客人還是收到了兩封，這部分只能請客服準備說明。這也是為什麼下面修改批次時，寄信要另外處理。</li>
+</ul>
+<h2>改成可以安全重跑的批次</h2>
+<p>目標是：<strong>不管跑到哪裡中斷、重跑幾次，結果都和只跑一次一樣。</strong>（這個性質叫做冪等，idempotent。）做法有五個：</p>
+<ol>
+<li><strong>同一時間只能有一支在跑。</strong> 用 MariaDB／MySQL 的 <code>GET_LOCK()</code> 取一個具名鎖，拿不到就直接結束。這可以擋住「第一次其實沒死、只是卡住，第二次又啟動」的情況。連線斷掉時資料庫會自動釋放這個鎖，不會因為程式當掉而永遠鎖住。</li>
+<li><strong>每 200 筆一個交易。</strong> 中斷時，最後那一批整批退回，前面已經 commit 的批次保留。不會出現「一筆明細寫進去了，但訂單金額沒更新」的半套狀態。</li>
+<li><strong>用交易編號判斷做過沒有。</strong> 已經有的就略過；交易編號相同但金額不同，不要默默略過，列出來給人看。</li>
+<li><strong>已付金額用重算，不用累加。</strong> 和清理時同一個道理：重算跑幾次都是同一個答案。</li>
+<li><strong>不在批次裡寄信，只記下「要寄」。</strong> 通知寫進 <code>payment_notices</code> 表，以交易編號為主鍵，所以同一筆交易只會有一列。另一支程式負責把還沒寄的寄出去。</li>
+</ol>
+<p>跑完之後再加一步：<strong>拿檔案的筆數與總額，和資料庫裡這個撥款日的筆數與總額比對。</strong> 原本的批次只會說「我處理了 1000 筆」，但處理了幾筆和資料庫裡最後有幾筆，是兩件不同的事。</p>
+<figure><img src="fig-3.svg" alt="修改後的匯入流程：每一步都可以重來；寄信由另一支程式讀取待寄通知後寄出" loading="lazy"><figcaption>修改後的匯入流程：每一步都可以重來；寄信由另一支程式讀取待寄通知後寄出</figcaption></figure>
+<p>資料表的部分，<code>payments</code> 加上唯一鍵，另外新增待寄通知的表：</p>
+<div class="hl"><pre><span></span><code><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">payments</span><span class="w"> </span><span class="p">(</span>
+<span class="w">  </span><span class="n">id</span><span class="w">          </span><span class="nb">INT</span><span class="w"> </span><span class="n">AUTO_INCREMENT</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="p">,</span>
+<span class="w">  </span><span class="n">txn_id</span><span class="w">      </span><span class="nb">VARCHAR</span><span class="p">(</span><span class="mi">30</span><span class="p">)</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">  </span><span class="n">order_no</span><span class="w">    </span><span class="nb">VARCHAR</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">  </span><span class="n">amount</span><span class="w">      </span><span class="nb">INT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">  </span><span class="n">settle_date</span><span class="w"> </span><span class="nb">DATE</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">  </span><span class="n">imported_at</span><span class="w"> </span><span class="n">DATETIME</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="k">CURRENT_TIMESTAMP</span><span class="p">,</span>
+<span class="w">  </span><span class="k">UNIQUE</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="n">uk_payments_txn</span><span class="w"> </span><span class="p">(</span><span class="n">txn_id</span><span class="p">)</span>
+<span class="p">);</span>
+<span class="c1">-- 待寄的通知：同一筆交易只會有一列，寄出後填 sent_at</span>
+<span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">payment_notices</span><span class="w"> </span><span class="p">(</span>
+<span class="w">  </span><span class="n">txn_id</span><span class="w">     </span><span class="nb">VARCHAR</span><span class="p">(</span><span class="mi">30</span><span class="p">)</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="p">,</span>
+<span class="w">  </span><span class="n">order_no</span><span class="w">   </span><span class="nb">VARCHAR</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">  </span><span class="n">email</span><span class="w">      </span><span class="nb">VARCHAR</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<span class="w">  </span><span class="n">created_at</span><span class="w"> </span><span class="n">DATETIME</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="k">CURRENT_TIMESTAMP</span><span class="p">,</span>
+<span class="w">  </span><span class="n">sent_at</span><span class="w">    </span><span class="n">DATETIME</span><span class="w"> </span><span class="k">NULL</span>
+<span class="p">);</span>
+</code></pre></div>
+
+<p>匯入批次：</p>
+<div class="hl"><pre><span></span><code><span class="cp">&lt;?php</span>
+<span class="c1">// 可以安全重跑的匯入批次</span>
+<span class="c1">// 用法：php import.php &lt;撥款明細.csv&gt;</span>
+<span class="c1">// 結束代碼：0 完成且對帳一致；1 中斷或對帳不一致；2 已有另一個匯入在執行</span>
+<span class="k">const</span> <span class="no">BATCH_SIZE</span> <span class="o">=</span> <span class="mi">200</span><span class="p">;</span>
+
+<span class="nv">$pdo</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">PDO</span><span class="p">(</span><span class="s1">'mysql:host=localhost;dbname=shop;charset=utf8mb4'</span><span class="p">,</span> <span class="s1">'batch'</span><span class="p">,</span> <span class="s1">'demo'</span><span class="p">,</span>
+    <span class="p">[</span><span class="nx">PDO</span><span class="o">::</span><span class="na">ATTR_ERRMODE</span> <span class="o">=&gt;</span> <span class="nx">PDO</span><span class="o">::</span><span class="na">ERRMODE_EXCEPTION</span><span class="p">]);</span>
+<span class="nv">$crashAt</span> <span class="o">=</span> <span class="p">(</span><span class="nx">int</span><span class="p">)</span> <span class="nb">getenv</span><span class="p">(</span><span class="s1">'CRASH_AT'</span><span class="p">);</span>     <span class="c1">// 示範用：處理到第 N 筆時模擬連線中斷</span>
+<span class="nv">$slowMs</span>  <span class="o">=</span> <span class="p">(</span><span class="nx">int</span><span class="p">)</span> <span class="nb">getenv</span><span class="p">(</span><span class="s1">'SLOW_MS'</span><span class="p">);</span>      <span class="c1">// 示範用：每批之後暫停，模擬跑很久</span>
+
+<span class="c1">// 1. 同一時間只能有一個匯入在跑（連線斷掉時，資料庫會自動釋放這個鎖）</span>
+<span class="k">if</span> <span class="p">((</span><span class="nx">int</span><span class="p">)</span> <span class="nv">$pdo</span><span class="o">-&gt;</span><span class="na">query</span><span class="p">(</span><span class="s2">"SELECT GET_LOCK('payment_import', 0)"</span><span class="p">)</span><span class="o">-&gt;</span><span class="na">fetchColumn</span><span class="p">()</span> <span class="o">!==</span> <span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">echo</span> <span class="s2">"已有另一個匯入正在執行，這次不執行</span><span class="se">\n</span><span class="s2">"</span><span class="p">;</span>
+    <span class="k">exit</span><span class="p">(</span><span class="mi">2</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="nv">$rows</span> <span class="o">=</span> <span class="nb">array_map</span><span class="p">(</span><span class="s1">'str_getcsv'</span><span class="p">,</span> <span class="nb">array_slice</span><span class="p">(</span><span class="nb">file</span><span class="p">(</span><span class="nv">$argv</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="nx">FILE_IGNORE_NEW_LINES</span><span class="p">),</span> <span class="mi">1</span><span class="p">));</span>
+<span class="nv">$find</span>   <span class="o">=</span> <span class="nv">$pdo</span><span class="o">-&gt;</span><span class="na">prepare</span><span class="p">(</span><span class="s1">'SELECT amount FROM payments WHERE txn_id = ?'</span><span class="p">);</span>
+<span class="nv">$insert</span> <span class="o">=</span> <span class="nv">$pdo</span><span class="o">-&gt;</span><span class="na">prepare</span><span class="p">(</span><span class="s1">'INSERT INTO payments (txn_id, order_no, amount, settle_date) VALUES (?, ?, ?, ?)'</span><span class="p">);</span>
+<span class="nv">$notice</span> <span class="o">=</span> <span class="nv">$pdo</span><span class="o">-&gt;</span><span class="na">prepare</span><span class="p">(</span><span class="s1">'INSERT INTO payment_notices (txn_id, order_no, email)</span>
+<span class="s1">                         SELECT ?, order_no, email FROM orders WHERE order_no = ?'</span><span class="p">);</span>
+<span class="nv">$added</span> <span class="o">=</span> <span class="nv">$skipped</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+<span class="nv">$conflicts</span> <span class="o">=</span> <span class="p">[];</span>
+
+<span class="k">try</span> <span class="p">{</span>
+    <span class="k">foreach</span> <span class="p">(</span><span class="nb">array_chunk</span><span class="p">(</span><span class="nv">$rows</span><span class="p">,</span> <span class="nx">BATCH_SIZE</span><span class="p">)</span> <span class="k">as</span> <span class="nv">$chunk</span><span class="p">)</span> <span class="p">{</span>
+        <span class="c1">// 2. 每 200 筆一個交易：要嘛整批寫進去，要嘛整批沒寫</span>
+        <span class="nv">$pdo</span><span class="o">-&gt;</span><span class="na">beginTransaction</span><span class="p">();</span>
+        <span class="k">foreach</span> <span class="p">(</span><span class="nv">$chunk</span> <span class="k">as</span> <span class="p">[</span><span class="nv">$txn</span><span class="p">,</span> <span class="nv">$orderNo</span><span class="p">,</span> <span class="nv">$amount</span><span class="p">,</span> <span class="nv">$date</span><span class="p">])</span> <span class="p">{</span>
+            <span class="nv">$find</span><span class="o">-&gt;</span><span class="na">execute</span><span class="p">([</span><span class="nv">$txn</span><span class="p">]);</span>
+            <span class="nv">$existing</span> <span class="o">=</span> <span class="nv">$find</span><span class="o">-&gt;</span><span class="na">fetchColumn</span><span class="p">();</span>
+            <span class="k">if</span> <span class="p">(</span><span class="nv">$existing</span> <span class="o">===</span> <span class="k">false</span><span class="p">)</span> <span class="p">{</span>
+                <span class="nv">$insert</span><span class="o">-&gt;</span><span class="na">execute</span><span class="p">([</span><span class="nv">$txn</span><span class="p">,</span> <span class="nv">$orderNo</span><span class="p">,</span> <span class="nv">$amount</span><span class="p">,</span> <span class="nv">$date</span><span class="p">]);</span>
+                <span class="nv">$notice</span><span class="o">-&gt;</span><span class="na">execute</span><span class="p">([</span><span class="nv">$txn</span><span class="p">,</span> <span class="nv">$orderNo</span><span class="p">]);</span>   <span class="c1">// 3. 只記下「要寄」，不在這裡寄</span>
+                <span class="nv">$added</span><span class="o">++</span><span class="p">;</span>
+            <span class="p">}</span> <span class="k">elseif</span> <span class="p">((</span><span class="nx">int</span><span class="p">)</span> <span class="nv">$existing</span> <span class="o">===</span> <span class="p">(</span><span class="nx">int</span><span class="p">)</span> <span class="nv">$amount</span><span class="p">)</span> <span class="p">{</span>
+                <span class="nv">$skipped</span><span class="o">++</span><span class="p">;</span>                           <span class="c1">// 之前已經匯入過，略過</span>
+            <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+                <span class="nv">$conflicts</span><span class="p">[]</span> <span class="o">=</span> <span class="s2">"</span><span class="si">{</span><span class="nv">$txn</span><span class="si">}</span><span class="s2"> 檔案金額 </span><span class="si">{</span><span class="nv">$amount</span><span class="si">}</span><span class="s2">，資料庫已有 </span><span class="si">{</span><span class="nv">$existing</span><span class="si">}</span><span class="s2">"</span><span class="p">;</span>
+            <span class="p">}</span>
+            <span class="k">if</span> <span class="p">(</span><span class="nv">$crashAt</span> <span class="o">&amp;&amp;</span> <span class="nv">$added</span> <span class="o">+</span> <span class="nv">$skipped</span> <span class="o">===</span> <span class="nv">$crashAt</span><span class="p">)</span> <span class="k">throw</span> <span class="k">new</span> <span class="nx">RuntimeException</span><span class="p">(</span><span class="s1">'（模擬）資料庫連線逾時'</span><span class="p">);</span>
+        <span class="p">}</span>
+        <span class="c1">// 4. 已付金額依明細重算，不用「加上去」</span>
+        <span class="nv">$orders</span> <span class="o">=</span> <span class="nb">array_unique</span><span class="p">(</span><span class="nb">array_column</span><span class="p">(</span><span class="nv">$chunk</span><span class="p">,</span> <span class="mi">1</span><span class="p">));</span>
+        <span class="nv">$in</span> <span class="o">=</span> <span class="nb">implode</span><span class="p">(</span><span class="s1">','</span><span class="p">,</span> <span class="nb">array_fill</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">count</span><span class="p">(</span><span class="nv">$orders</span><span class="p">),</span> <span class="s1">'?'</span><span class="p">));</span>
+        <span class="nv">$pdo</span><span class="o">-&gt;</span><span class="na">prepare</span><span class="p">(</span><span class="s2">"UPDATE orders o SET paid_amount =</span>
+<span class="s2">                         (SELECT COALESCE(SUM(amount), 0) FROM payments p WHERE p.order_no = o.order_no)</span>
+<span class="s2">                       WHERE o.order_no IN (</span><span class="si">$in</span><span class="s2">)"</span><span class="p">)</span><span class="o">-&gt;</span><span class="na">execute</span><span class="p">(</span><span class="nv">$orders</span><span class="p">);</span>
+        <span class="nv">$pdo</span><span class="o">-&gt;</span><span class="na">commit</span><span class="p">();</span>
+        <span class="nb">usleep</span><span class="p">(</span><span class="nv">$slowMs</span> <span class="o">*</span> <span class="mi">1000</span><span class="p">);</span>
+    <span class="p">}</span>
+<span class="p">}</span> <span class="k">catch</span> <span class="p">(</span><span class="nx">Throwable</span> <span class="nv">$e</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">if</span> <span class="p">(</span><span class="nv">$pdo</span><span class="o">-&gt;</span><span class="na">inTransaction</span><span class="p">())</span> <span class="nv">$pdo</span><span class="o">-&gt;</span><span class="na">rollBack</span><span class="p">();</span>
+    <span class="k">echo</span> <span class="s2">"匯入中斷：</span><span class="si">{</span><span class="nv">$e</span><span class="o">-&gt;</span><span class="na">getMessage</span><span class="p">()</span><span class="si">}</span><span class="s2">。已寫入的批次保留，可以直接重跑</span><span class="se">\n</span><span class="s2">"</span><span class="p">;</span>
+    <span class="k">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="c1">// 5. 跑完對帳：檔案的筆數與總額，要和資料庫裡這個撥款日的一致</span>
+<span class="nv">$date</span> <span class="o">=</span> <span class="nv">$rows</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">3</span><span class="p">];</span>
+<span class="nv">$fileSum</span> <span class="o">=</span> <span class="nb">array_sum</span><span class="p">(</span><span class="nb">array_column</span><span class="p">(</span><span class="nv">$rows</span><span class="p">,</span> <span class="mi">2</span><span class="p">));</span>
+<span class="nv">$q</span> <span class="o">=</span> <span class="nv">$pdo</span><span class="o">-&gt;</span><span class="na">prepare</span><span class="p">(</span><span class="s1">'SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM payments WHERE settle_date = ?'</span><span class="p">);</span>
+<span class="nv">$q</span><span class="o">-&gt;</span><span class="na">execute</span><span class="p">([</span><span class="nv">$date</span><span class="p">]);</span>
+<span class="p">[</span><span class="nv">$dbCount</span><span class="p">,</span> <span class="nv">$dbSum</span><span class="p">]</span> <span class="o">=</span> <span class="nv">$q</span><span class="o">-&gt;</span><span class="na">fetch</span><span class="p">(</span><span class="nx">PDO</span><span class="o">::</span><span class="na">FETCH_NUM</span><span class="p">);</span>
+
+<span class="k">echo</span> <span class="s2">"新增 </span><span class="si">$added</span><span class="s2"> 筆，略過已匯入 </span><span class="si">$skipped</span><span class="s2"> 筆，金額不符 "</span> <span class="o">.</span> <span class="nb">count</span><span class="p">(</span><span class="nv">$conflicts</span><span class="p">)</span> <span class="o">.</span> <span class="s2">" 筆</span><span class="se">\n</span><span class="s2">"</span><span class="p">;</span>
+<span class="k">foreach</span> <span class="p">(</span><span class="nv">$conflicts</span> <span class="k">as</span> <span class="nv">$c</span><span class="p">)</span> <span class="k">echo</span> <span class="s2">"  金額不符：</span><span class="si">$c</span><span class="se">\n</span><span class="s2">"</span><span class="p">;</span>
+<span class="k">echo</span> <span class="s2">"對帳 </span><span class="si">{</span><span class="nv">$date</span><span class="si">}</span><span class="s2">：檔案 "</span> <span class="o">.</span> <span class="nb">count</span><span class="p">(</span><span class="nv">$rows</span><span class="p">)</span> <span class="o">.</span> <span class="s2">" 筆 </span><span class="si">$fileSum</span><span class="s2"> 元，資料庫 </span><span class="si">$dbCount</span><span class="s2"> 筆 </span><span class="si">$dbSum</span><span class="s2"> 元</span><span class="se">\n</span><span class="s2">"</span><span class="p">;</span>
+<span class="nv">$ok</span> <span class="o">=</span> <span class="o">!</span><span class="nv">$conflicts</span> <span class="o">&amp;&amp;</span> <span class="p">(</span><span class="nx">int</span><span class="p">)</span> <span class="nv">$dbCount</span> <span class="o">===</span> <span class="nb">count</span><span class="p">(</span><span class="nv">$rows</span><span class="p">)</span> <span class="o">&amp;&amp;</span> <span class="p">(</span><span class="nx">int</span><span class="p">)</span> <span class="nv">$dbSum</span> <span class="o">===</span> <span class="nv">$fileSum</span><span class="p">;</span>
+<span class="k">echo</span> <span class="nv">$ok</span> <span class="o">?</span> <span class="s2">"對帳一致</span><span class="se">\n</span><span class="s2">"</span> <span class="o">:</span> <span class="s2">"對帳不一致，請人工確認</span><span class="se">\n</span><span class="s2">"</span><span class="p">;</span>
+<span class="k">exit</span><span class="p">(</span><span class="nv">$ok</span> <span class="o">?</span> <span class="mi">0</span> <span class="o">:</span> <span class="mi">1</span><span class="p">);</span>
+</code></pre></div>
+
+<p>寄信程式：</p>
+<div class="hl"><pre><span></span><code><span class="cp">&lt;?php</span>
+<span class="c1">// 寄送待寄的入帳通知：每 5 分鐘由 cron 執行</span>
+<span class="k">require</span> <span class="no">__DIR__</span> <span class="o">.</span> <span class="s1">'/mailer.php'</span><span class="p">;</span>
+
+<span class="nv">$pdo</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">PDO</span><span class="p">(</span><span class="s1">'mysql:host=localhost;dbname=shop;charset=utf8mb4'</span><span class="p">,</span> <span class="s1">'batch'</span><span class="p">,</span> <span class="s1">'demo'</span><span class="p">,</span>
+    <span class="p">[</span><span class="nx">PDO</span><span class="o">::</span><span class="na">ATTR_ERRMODE</span> <span class="o">=&gt;</span> <span class="nx">PDO</span><span class="o">::</span><span class="na">ERRMODE_EXCEPTION</span><span class="p">]);</span>
+<span class="k">if</span> <span class="p">((</span><span class="nx">int</span><span class="p">)</span> <span class="nv">$pdo</span><span class="o">-&gt;</span><span class="na">query</span><span class="p">(</span><span class="s2">"SELECT GET_LOCK('payment_notices', 0)"</span><span class="p">)</span><span class="o">-&gt;</span><span class="na">fetchColumn</span><span class="p">()</span> <span class="o">!==</span> <span class="mi">1</span><span class="p">)</span> <span class="k">exit</span><span class="p">(</span><span class="mi">2</span><span class="p">);</span>
+
+<span class="nv">$pending</span> <span class="o">=</span> <span class="nv">$pdo</span><span class="o">-&gt;</span><span class="na">query</span><span class="p">(</span><span class="s1">'SELECT txn_id, order_no, email FROM payment_notices</span>
+<span class="s1">                        WHERE sent_at IS NULL ORDER BY created_at, txn_id LIMIT 500'</span><span class="p">)</span><span class="o">-&gt;</span><span class="na">fetchAll</span><span class="p">();</span>
+<span class="nv">$done</span> <span class="o">=</span> <span class="nv">$pdo</span><span class="o">-&gt;</span><span class="na">prepare</span><span class="p">(</span><span class="s1">'UPDATE payment_notices SET sent_at = NOW() WHERE txn_id = ?'</span><span class="p">);</span>
+<span class="k">foreach</span> <span class="p">(</span><span class="nv">$pending</span> <span class="k">as</span> <span class="nv">$n</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">send_mail</span><span class="p">(</span><span class="nv">$pdo</span><span class="p">,</span> <span class="nv">$n</span><span class="p">[</span><span class="s1">'email'</span><span class="p">],</span> <span class="s2">"訂單 </span><span class="si">{</span><span class="nv">$n</span><span class="p">[</span><span class="s1">'order_no'</span><span class="p">]</span><span class="si">}</span><span class="s2"> 已收到款項"</span><span class="p">);</span>
+    <span class="nv">$done</span><span class="o">-&gt;</span><span class="na">execute</span><span class="p">([</span><span class="nv">$n</span><span class="p">[</span><span class="s1">'txn_id'</span><span class="p">]]);</span>   <span class="c1">// 寄完立刻標記；若剛好在這兩行之間當掉，這一封會重寄</span>
+<span class="p">}</span>
+<span class="k">echo</span> <span class="s1">'寄出 '</span> <span class="o">.</span> <span class="nb">count</span><span class="p">(</span><span class="nv">$pending</span><span class="p">)</span> <span class="o">.</span> <span class="s2">" 封</span><span class="se">\n</span><span class="s2">"</span><span class="p">;</span>
+</code></pre></div>
+
+<p>寄信程式的註解寫得很直白：如果剛好在「寄出」和「標記已寄」之間當掉，那一封會在下次重寄。這個缺口沒辦法完全消除，因為寄信和資料庫是兩個系統，沒有辦法放在同一個交易裡。但影響從「中斷前的每一位客人都收到兩封」縮小到「最多一位客人收到兩封」。</p>
+<h2>用同一份檔案重演一次</h2>
+<p>在乾淨的示範資料庫上，用同一份 1,000 筆的檔案，一樣在第 650 筆模擬中斷：</p>
+<figure><img src="fig-4.png" alt="實際執行結果：中斷後直接重跑，只補上缺的 400 筆；再跑一次什麼都不會改變" loading="lazy"><figcaption>實際執行結果：中斷後直接重跑，只補上缺的 400 筆；再跑一次什麼都不會改變</figcaption></figure>
+<p>中斷在第 650 筆，但重跑時「略過已匯入」是 600 筆，不是 650 筆。因為第 601～650 筆屬於第 4 批，那一批還沒 commit 就中斷了，整批退回。中斷後立刻查，資料庫裡的明細和待寄通知都是 600 筆，沒有半套的資料。</p>
+<p>接著執行寄信程式三次（每次最多寄 500 封）：</p>
+<div class="hl"><pre><span></span><code>$ php send_notices.php
+寄出 500 封
+$ php send_notices.php
+寄出 500 封
+$ php send_notices.php
+寄出 0 封
+</code></pre></div>
+
+<p>最後用前面那三段查詢檢查：明細 1,000 筆、2,606,400 元，溢收訂單 0 張，收到兩封以上的客人 0 位。</p>
+<p>另外兩種情況也實際跑過。第一種是同時啟動兩支（第一支用 <code>SLOW_MS=1000</code> 讓它跑慢一點）：</p>
+<div class="hl"><pre><span></span><code>$ SLOW_MS=1000 php import.php settle_20261126.csv &amp;   # 第一個，跑比較久
+$ php import.php settle_20261126.csv                    # 同時又啟動一個
+已有另一個匯入正在執行，這次不執行
+結束代碼：2
+（第一個的輸出）
+新增 1000 筆，略過已匯入 0 筆，金額不符 0 筆
+對帳 2026-11-26：檔案 1000 筆 2606400 元，資料庫 1000 筆 2606400 元
+對帳一致
+</code></pre></div>
+
+<p>第二種是金流商事後重新提供檔案，其中一筆的金額不一樣（示範時把第 3 筆從 1400 改成 999）：</p>
+<div class="hl"><pre><span></span><code>$ php import.php settle_20261126_v2.csv   # 金流商重新提供的檔案
+新增 0 筆，略過已匯入 999 筆，金額不符 1 筆
+  金額不符：T20261126000003 檔案金額 999，資料庫已有 1400
+對帳 2026-11-26：檔案 1000 筆 2605999 元，資料庫 1000 筆 2606400 元
+對帳不一致，請人工確認
+結束代碼：1
+</code></pre></div>
+
+<p>這種情況程式不會自己決定哪個金額才對，而是停下來、用結束代碼 1 讓排程監控亮紅燈。金額的更正應該走另一個有人確認的流程，不是讓批次默默覆蓋。</p>
+<h2>套用到你的批次之前</h2>
+<ul>
+<li><strong>先找出「業務上的唯一值」。</strong> 這個例子用的是金流商的交易編號。如果來源檔案沒有這種編號，就要和資料提供方確認有沒有可以唯一識別一筆資料的欄位組合；找不到的話，至少要用檔名或檔案雜湊值記錄「這份檔案匯入過了」。</li>
+<li><strong>加唯一鍵之前，先查現有資料有沒有重複。</strong> 有重複的話 <code>ALTER TABLE</code> 會失敗，要先照前面的方法清理。</li>
+<li><strong>每批大小要依實際情況調。</strong> 200 筆是示範用的數字。一批太大，交易會鎖住比較多資料列、退回時也比較久；太小則 commit 次數多、比較慢。</li>
+<li><strong>這支程式把整個檔案讀進記憶體。</strong> 檔案很大時要改成逐行讀、累積到一批再處理。</li>
+<li><strong>Laravel 的排程有 <code>withoutOverlapping()</code></strong>，可以避免同一個排程任務重疊執行；但它擋不住有人在主機上手動執行 artisan 指令，資料庫的唯一鍵還是要加。（這一點本文沒有實際測試。）</li>
+<li><strong>MySQL 8 也有 <code>GET_LOCK()</code></strong>，用法相同，但本文只在 MariaDB 10.11 上實測過。</li>
+</ul>
+<blockquote>
+<p>本文的兩支匯入批次、寄信程式（PHP 8.3.6）、建表、查詢與清理的 SQL（MariaDB 10.11.14），都在 Ubuntu 24.04 沙盒上用自行產生的 1,000 筆示範資料實際執行過，文中的輸出與實際輸出相同；「重複的範圍」那張圖是把表格輸出重排過的，數字未更動。cron 排程、實際寄信、MySQL 8 與 Laravel 的部分沒有實際執行。本系列文章原本優先使用 C#，這次的沙盒環境無法下載 .NET 的 MySQL 連線套件，所以改用 PHP 寫，觀念在 C# 一樣適用。</p>
+</blockquote>
+<h2>學到什麼</h2>
+<ul>
+<li>批次失敗後最危險的動作，常常是「直接再跑一次」。重跑前要先知道：上一次做到哪裡、已經做了的事會不會再做一次。</li>
+<li>「顯示成功」只代表程式沒有報錯。跑完要拿來源的筆數與總額對帳，才知道結果對不對。</li>
+<li>讓批次可以安全重跑，靠的不是更小心，而是結構：唯一鍵擋重複、交易擋半套、重算取代累加、副作用另外處理、同一時間只跑一支。</li>
+<li>寄出去的信、打出去的 API、發出去的簡訊收不回來。這類動作要從批次裡拆出來，並且記錄「做過了沒有」。</li>
+</ul>
+<p>如果你的系統也有一支「出事時沒人敢重跑」的批次，問達工作室可以幫你查清楚它中斷時會留下什麼，再把它改成可以放心重跑的樣子。</p>
+<div class="post-end note">問達工作室｜系統救火與自動化・<a href="../../">服務說明</a>・<a href="../../blog/">更多文章</a></div>
+</article>
+</main>
+<footer class="wrap">© 2026 問達工作室・<a href="../../blog/feed.xml">RSS</a></footer>
+<script>(function(){var b=document.querySelector(".theme-toggle"),r=document.documentElement;function sync(){b.setAttribute("aria-pressed",r.getAttribute("data-theme")==="dark"?"true":"false")}sync();b.addEventListener("click",function(){var n=r.getAttribute("data-theme")==="dark"?"light":"dark";r.setAttribute("data-theme",n);try{localStorage.setItem("theme",n)}catch(e){}sync()})})();</script>
+</body>
+</html>
